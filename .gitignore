@@ -38,3 +38,4 @@ desktop.ini
 # IDE
 .vscode/
 .idea/
+node_modules/
