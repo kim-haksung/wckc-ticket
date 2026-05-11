@@ -112,6 +112,9 @@ let isActiveShowing = false;
 
 /* ── 초기화 ─────────────────────────────── */
 async function init() {
+  // CSRF 토큰 준비 완료까지 대기 (race condition 방지)
+  if (window.csrfReady) await window.csrfReady;
+
   const me = await fetch('/api/me').then(r => r.json()).catch(() => null);
   if (!me || !me.logged_in) { location.href = '/login'; return; }
   document.getElementById('userName').textContent = me.name;
@@ -128,6 +131,13 @@ async function joinQueue() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body)
     });
+
+    // CSRF 오류 등 비정상 응답 → 1초 후 재시도
+    if (!res.ok) {
+      setTimeout(joinQueue, 1000);
+      return;
+    }
+
     const data = await res.json();
 
     if (data.token) {
