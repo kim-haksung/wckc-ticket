@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>마이페이지 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-house"></i> 홈</a>
+    <a href="/booking"><i class="fa-solid fa-couch"></i> 좌석 예매</a>
+    <a href="/mypage" class="active"><i class="fa-solid fa-user"></i> 마이페이지</a>
+  </nav>
+  <div class="user-info">
+    <i class="fa-solid fa-circle-user" style="font-size:18px;opacity:.8"></i>
+    <span id="userName"></span>님
+    <button class="btn-logout" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-header">
+    <div class="ph-icon"><i class="fa-solid fa-user"></i></div>
+    <div>
+      <h1>마이페이지</h1>
+      <p>나의 예매 내역을 확인하고 관리합니다.</p>
+    </div>
+  </div>
+
+  <div id="alertBox" class="alert"></div>
+
+  <!-- 모든 티켓 출력 버튼 (예매 확정 좌석이 있을 때만 표시) -->
+  <div id="allTicketBar" style="display:none;margin-bottom:18px;
+       background:linear-gradient(135deg,#0f2035,#1e3a5f);
+       border-radius:12px;padding:16px 22px;
+       display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div style="color:#fff">
+      <div style="font-size:15px;font-weight:700;margin-bottom:2px">
+        <i class="fa-solid fa-ticket" style="color:#e8a820;margin-right:8px"></i>
+        예매 확정 좌석 <span id="confirmedCountBadge"
+          style="background:#e8a820;color:#0f2035;padding:2px 10px;border-radius:20px;
+                 font-size:13px;font-weight:900;margin-left:4px">0</span>석
+      </div>
+      <div style="font-size:12.5px;color:#93b8d4">
+        모든 티켓을 한 번에 A4 한 장으로 인쇄하거나 JPG로 저장할 수 있습니다.
+      </div>
+    </div>
+    <a href="/print/tickets/all" target="_blank"
+       style="display:inline-flex;align-items:center;gap:8px;
+              background:#e8a820;color:#0f2035;font-weight:800;font-size:14px;
+              padding:11px 22px;border-radius:8px;text-decoration:none;
+              white-space:nowrap;flex-shrink:0">
+      <i class="fa-solid fa-print"></i> 모든 티켓 출력
+    </a>
+  </div>
+
+  <div id="loadingBox" class="loading">
+    <div class="spinner"></div><br>예매 내역을 불러오는 중...
+  </div>
+
+  <div id="emptyBox" style="display:none;text-align:center;padding:60px;background:white;border-radius:var(--radius);box-shadow:var(--shadow)">
+    <i class="fa-solid fa-ticket" style="font-size:48px;color:var(--gray-mid);display:block;margin-bottom:16px"></i>
+    <h3 style="color:var(--gray);margin-bottom:12px">예매 내역이 없습니다</h3>
+    <p style="color:var(--gray);font-size:13.5px;margin-bottom:20px">아직 예매한 좌석이 없습니다.</p>
+    <a href="/booking" class="btn btn-primary">
+      <i class="fa-solid fa-couch"></i> 좌석 예매하러 가기
+    </a>
+  </div>
+
+  <!-- 선택 일괄 처리 액션 바 -->
+  <div id="bulkBar" style="display:none;margin-bottom:10px;
+       background:#fff;border:1.5px solid #dbeafe;border-radius:10px;
+       padding:10px 16px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span id="bulkCount" style="font-size:13.5px;font-weight:700;color:var(--primary)">
+      <i class="fa-solid fa-check-square" style="color:#3b82f6;margin-right:6px"></i>
+      <span id="bulkCountNum">0</span>석 선택됨
+    </span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="bulkPrint()" class="res-btn res-btn-print" style="font-size:13px;padding:7px 16px">
+        <i class="fa-solid fa-print"></i> 선택 티켓 출력
+      </button>
+      <button onclick="bulkCancel()" class="res-btn res-btn-cancel" style="font-size:13px;padding:7px 16px;border:1px solid #fca5a5">
+        <i class="fa-solid fa-trash"></i> 선택 예매 취소
+      </button>
+    </div>
+  </div>
+
+  <!-- 예매 테이블 -->
+  <div id="resList" style="display:none;background:white;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden">
+    <table class="res-table">
+      <thead>
+        <tr>
+          <th style="width:44px;text-align:center">
+            <input type="checkbox" id="checkAll" onchange="toggleAll(this)"
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">
+          </th>
+          <th style="width:46px;text-align:center">No</th>
+          <th>예매번호</th>
+          <th>좌석 정보</th>
+          <th>예매일시</th>
+          <th style="width:100px;text-align:center">예매상태</th>
+          <th style="width:110px;text-align:center">입금상태</th>
+          <th style="width:190px;text-align:center">관리</th>
+        </tr>
+      </thead>
+      <tbody id="resTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 취소 확인 모달 -->
+<div class="modal-overlay" id="cancelModal">
+  <div class="modal-box" style="max-width:460px">
+    <!-- 헤더 -->
+    <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#b91c1c);border-bottom:none">
+      <div class="modal-header-icon" style="background:rgba(255,255,255,.2);color:#fff">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h2 style="color:#fff">예매 취소</h2>
+      <button class="modal-close" style="background:rgba(255,255,255,.2);color:#fff" onclick="closeCancelModal()">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div class="modal-body" style="gap:14px">
+      <!-- 취소 대상 안내 -->
+      <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:12px 14px">
+        <p style="font-size:12.5px;font-weight:700;color:#dc2626;margin-bottom:6px">
+          <i class="fa-solid fa-circle-exclamation" style="margin-right:5px"></i>취소 대상 좌석
+        </p>
+        <p id="cancelInfo" style="font-size:13.5px;color:#374151;line-height:1.6"></p>
+      </div>
+
+      <!-- 환불 계좌 입력 -->
+      <div style="background:#f8faff;border:1px solid #dbeafe;border-radius:10px;padding:14px 16px">
+        <p style="font-size:12.5px;font-weight:700;color:#1d4ed8;margin-bottom:12px">
+          <i class="fa-solid fa-building-columns" style="margin-right:5px"></i>환불 받을 계좌 정보
+        </p>
+        <div style="display:grid;gap:10px">
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block">
+              은행명 <span style="color:#dc2626">*</span>
+            </label>
+            <select id="refundBank" class="form-control" style="font-size:13px;padding:8px 10px;height:auto">
+              <option value="">은행 선택</option>
+              <option>농협</option><option>국민</option><option>신한</option>
+              <option>우리</option><option>하나</option><option>기업</option>
+              <option>수협</option><option>새마을금고</option><option>우체국</option>
+              <option>카카오뱅크</option><option>토스뱅크</option><option>케이뱅크</option>
+              <option>기타</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block">
+              계좌번호 <span style="color:#dc2626">*</span>
+            </label>
+            <input type="text" id="refundAccount" class="form-control"
+              placeholder="계좌번호 입력 (- 없이)" style="font-size:13px;padding:8px 10px;height:auto">
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;display:block">
+              예금주 <span style="color:#dc2626">*</span>
+            </label>
+            <input type="text" id="refundHolder" class="form-control"
+              placeholder="예금주 성명" style="font-size:13px;padding:8px 10px;height:auto">
+          </div>
+        </div>
+        <p style="font-size:11.5px;color:#6b7280;margin-top:10px;line-height:1.5">
+          <i class="fa-solid fa-circle-info" style="color:#93c5fd;margin-right:4px"></i>
+          입력하신 계좌 정보는 회원정보에 저장되며, 다음 취소 시 자동 적용됩니다.
+        </p>
+      </div>
+    </div>
+
+    <!-- 푸터 -->
+    <div style="padding:12px 22px 18px;border-top:1px solid #f3f4f6;display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeCancelModal()">
+        <i class="fa-solid fa-xmark"></i> 닫기
+      </button>
+      <button class="btn btn-danger" id="cancelConfirmBtn" onclick="confirmCancel()"
+        style="display:flex;align-items:center;gap:6px">
+        <i class="fa-solid fa-trash"></i> 취소 확정
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let me = null;
+let cancelTargetId = null;
+
+const STATUS_MAP = {
+  confirmed:       '<i class="fa-solid fa-circle-check" style="color:var(--success)"></i> 정상',
+  cancelled:       '<i class="fa-solid fa-circle-xmark" style="color:var(--danger)"></i> 취소',
+  admin_cancelled: '<i class="fa-solid fa-circle-xmark" style="color:var(--danger)"></i> 관리자취소'
+};
+const FLOOR_MAP = { 1: '1층', 2: '2층' };
+
+(async () => {
+  me = await fetch('/api/me').then(r => r.json());
+  if (!me.logged_in) { location.href = '/login'; return; }
+  document.getElementById('userName').textContent = me.name;
+  await loadReservations();
+})();
+
+async function loadReservations() {
+  document.getElementById('loadingBox').style.display = 'block';
+  document.getElementById('resList').style.display = 'none';
+  document.getElementById('resTableBody').innerHTML = '';
+  document.getElementById('emptyBox').style.display = 'none';
+
+  const res  = await fetch('/api/reservations/my');
+  const data = await res.json();
+  document.getElementById('loadingBox').style.display = 'none';
+
+  const list = data.reservations;
+  if (!list.length) { document.getElementById('emptyBox').style.display = 'block'; return; }
+
+  // 확정 예매 수 집계 → 모든 티켓 출력 버튼 표시
+  const confirmedList = list.filter(r => r.status === 'confirmed');
+  const bar = document.getElementById('allTicketBar');
+  if (confirmedList.length > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('confirmedCountBadge').textContent = confirmedList.length;
+  } else {
+    bar.style.display = 'none';
+  }
+
+  const tbody = document.getElementById('resTableBody');
+  tbody.innerHTML = '';
+  document.getElementById('resList').style.display = 'block';
+
+  // 체크박스 상태 초기화
+  const checkAll = document.getElementById('checkAll');
+  if (checkAll) { checkAll.checked = false; checkAll.indeterminate = false; }
+  document.getElementById('bulkBar').style.display = 'none';
+
+  list.forEach((r, idx) => {
+    const isConfirmed = r.status === 'confirmed';
+    const floorLabel  = FLOOR_MAP[r.floor] || r.floor + '층';
+    const seatLabel   = `${floorLabel} &nbsp;<strong>${r.section} 구역</strong>&nbsp; ${r.seat_no}번`;
+    const dateStr     = r.reserved_at || '—';
+    const cancelStr   = r.cancelled_at
+      ? `<br><span style="font-size:11px;color:var(--danger)"><i class="fa-solid fa-ban"></i> 취소: ${r.cancelled_at}</span>` : '';
+
+    const statusHtml = isConfirmed
+      ? `<span class="res-status-badge res-status-ok"><i class="fa-solid fa-circle-check"></i> 정상</span>`
+      : r.status === 'cancelled'
+        ? `<span class="res-status-badge res-status-cancel"><i class="fa-solid fa-circle-xmark"></i> 취소</span>`
+        : `<span class="res-status-badge res-status-cancel"><i class="fa-solid fa-circle-xmark"></i> 관리자취소</span>`;
+
+    const paymentHtml = !isConfirmed
+      ? `<span style="font-size:12px;color:var(--gray)">—</span>`
+      : (r.payment_status === 'paid')
+        ? `<span class="res-status-badge" style="background:#dbeafe;color:#1d4ed8">
+             <i class="fa-solid fa-circle-check"></i> 입금완료
+           </span>`
+        : `<span class="res-status-badge" style="background:#fef3c7;color:#92400e">
+             <i class="fa-solid fa-clock"></i> 입금대기
+           </span>`;
+
+    const actionHtml = isConfirmed ? `
+      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+        <a href="/print/ticket/${r.res_code}" target="_blank" class="res-btn res-btn-print">
+          <i class="fa-solid fa-print"></i> 티켓출력
+        </a>
+        <button class="res-btn res-btn-cancel" onclick="openCancel(${r.id}, '${r.section}', '${r.seat_no}')">
+          <i class="fa-solid fa-trash"></i> 예매취소
+        </button>
+      </div>` : `<span style="font-size:12px;color:var(--gray)">—</span>`;
+
+    // 체크박스: 확정 예매만 선택 가능
+    const checkboxCell = isConfirmed
+      ? `<td style="text-align:center">
+           <input type="checkbox" class="row-check"
+             data-id="${r.id}" data-res="${r.res_code}"
+             data-section="${r.section}" data-seatno="${r.seat_no}"
+             style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)"
+             onchange="onRowCheck()">
+         </td>`
+      : `<td></td>`;
+
+    const tr = document.createElement('tr');
+    tr.className = isConfirmed ? '' : 'res-row-cancelled';
+    tr.innerHTML = `
+      ${checkboxCell}
+      <td style="text-align:center;color:var(--gray);font-size:13px">${idx + 1}</td>
+      <td>
+        <span class="res-code-badge"><i class="fa-solid fa-receipt"></i> ${r.res_code}</span>
+      </td>
+      <td style="font-size:13.5px">${seatLabel}${cancelStr}</td>
+      <td style="font-size:12.5px;color:var(--gray);white-space:nowrap">${dateStr}</td>
+      <td style="text-align:center">${statusHtml}</td>
+      <td style="text-align:center">${paymentHtml}</td>
+      <td>${actionHtml}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ── 환불 계좌 자동 로드 ── */
+async function loadRefundAccount() {
+  try {
+    const d = await fetch('/api/refund-account').then(r => r.json());
+    if (d.refund_bank)    { document.getElementById('refundBank').value    = d.refund_bank; }
+    if (d.refund_account) { document.getElementById('refundAccount').value = d.refund_account; }
+    // 예금주: 저장값 있으면 사용, 없으면 예매자 성명
+    document.getElementById('refundHolder').value = d.refund_holder || d.name || '';
+  } catch(e) {}
+}
+
+/* ── 체크박스 제어 ── */
+function toggleAll(master) {
+  document.querySelectorAll('.row-check').forEach(cb => cb.checked = master.checked);
+  updateBulkBar();
+}
+
+function onRowCheck() {
+  const all   = document.querySelectorAll('.row-check');
+  const checked = document.querySelectorAll('.row-check:checked');
+  const master  = document.getElementById('checkAll');
+  master.checked       = checked.length === all.length && all.length > 0;
+  master.indeterminate = checked.length > 0 && checked.length < all.length;
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.row-check:checked');
+  const bar     = document.getElementById('bulkBar');
+  document.getElementById('bulkCountNum').textContent = checked.length;
+  bar.style.display = checked.length > 0 ? 'flex' : 'none';
+}
+
+function getChecked() {
+  return [...document.querySelectorAll('.row-check:checked')].map(cb => ({
+    id:      cb.dataset.id,
+    res:     cb.dataset.res,
+    section: cb.dataset.section,
+    seatno:  cb.dataset.seatno,
+  }));
+}
+
+/* ── 일괄 티켓 출력 ── */
+function bulkPrint() {
+  const items = getChecked();
+  if (!items.length) return;
+  // 선택한 예매번호를 쿼리로 전달
+  const codes = items.map(i => i.res).join(',');
+  window.open(`/print/tickets/bulk?codes=${encodeURIComponent(codes)}`, '_blank');
+}
+
+/* ── 일괄 예매 취소 ── */
+let bulkCancelTargets = [];
+function bulkCancel() {
+  bulkCancelTargets = getChecked();
+  if (!bulkCancelTargets.length) return;
+  const info = bulkCancelTargets.map(i =>
+    `<li style="padding:3px 0"><i class="fa-solid fa-couch" style="color:var(--primary);margin-right:5px"></i>${i.section} 구역 <strong>${i.seatno}번</strong></li>`
+  ).join('');
+  document.getElementById('cancelInfo').innerHTML =
+    `<strong>${bulkCancelTargets.length}석</strong>을 일괄 취소합니다.<ul style="margin-top:8px;padding-left:4px;list-style:none">${info}</ul>`;
+  cancelTargetId = null; // 단건 아님 표시
+  document.getElementById('cancelModal').classList.add('modal-open');
+  document.body.style.overflow = 'hidden';
+  loadRefundAccount();
+}
+
+function openCancel(id, sec, no) {
+  cancelTargetId = id;
+  document.getElementById('cancelInfo').innerHTML =
+    `<i class="fa-solid fa-couch" style="color:var(--primary);margin-right:6px"></i>${sec} 구역 <strong>${no}번</strong> 좌석`;
+  document.getElementById('cancelModal').classList.add('modal-open');
+  document.body.style.overflow = 'hidden';
+  loadRefundAccount();
+}
+function closeCancelModal() {
+  document.getElementById('cancelModal').classList.remove('modal-open');
+  document.body.style.overflow = '';
+  cancelTargetId = null;
+  bulkCancelTargets = [];
+}
+
+async function confirmCancel() {
+  // 환불 계좌 유효성 검사
+  const bank    = document.getElementById('refundBank').value.trim();
+  const account = document.getElementById('refundAccount').value.trim();
+  const holder  = document.getElementById('refundHolder').value.trim();
+  if (!bank || !account || !holder) {
+    alert('환불 받을 계좌 정보(은행명, 계좌번호, 예금주)를 모두 입력해주세요.');
+    return;
+  }
+
+  const btn = document.getElementById('cancelConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+
+  // 계좌 정보 먼저 저장
+  await fetch('/api/refund-account', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ refund_bank: bank, refund_account: account, refund_holder: holder })
+  });
+
+  const al = document.getElementById('alertBox');
+
+  // ── 일괄 취소 ──
+  if (!cancelTargetId && bulkCancelTargets.length > 0) {
+    let successCount = 0, failCount = 0;
+    for (const item of bulkCancelTargets) {
+      const r = await fetch(`/api/reservations/${item.id}`, { method: 'DELETE' });
+      if (r.ok) successCount++; else failCount++;
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-trash"></i> 취소 확정';
+    bulkCancelTargets = [];
+    closeCancelModal();
+
+    al.innerHTML = failCount === 0
+      ? `<i class="fa-solid fa-circle-check"></i> ${successCount}석 예매가 취소되었습니다.`
+      : `<i class="fa-solid fa-circle-exclamation"></i> ${successCount}석 취소 성공, ${failCount}석 실패`;
+    al.className = failCount === 0 ? 'alert alert-success show' : 'alert alert-danger show';
+    await loadReservations();
+    setTimeout(() => al.classList.remove('show'), 4000);
+    return;
+  }
+
+  // ── 단건 취소 ──
+  if (!cancelTargetId) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-trash"></i> 취소 확정'; return; }
+  const res  = await fetch(`/api/reservations/${cancelTargetId}`, { method: 'DELETE' });
+  const data = await res.json();
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-trash"></i> 취소 확정';
+  closeCancelModal();
+
+  if (res.ok) {
+    al.innerHTML = '<i class="fa-solid fa-circle-check"></i> 예매가 취소되었습니다.';
+    al.className = 'alert alert-success show';
+    await loadReservations();
+  } else {
+    al.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + data.error;
+    al.className = 'alert alert-danger show';
+  }
+  setTimeout(() => al.classList.remove('show'), 4000);
+}
+
+async function doLogout() {
+  await fetch('/api/logout', {method:'POST'});
+  location.href = '/';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>관리자 대시보드 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+    <span style="font-size:11px;background:var(--accent);color:var(--primary-dark);padding:2px 8px;border-radius:6px;font-weight:700;margin-left:4px">관리자</span>
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-arrow-left"></i> 사용자 홈</a>
+  </nav>
+  <div class="user-info">
+    <i class="fa-solid fa-user-shield" style="font-size:18px;opacity:.8"></i>
+    <span id="adminName"></span>
+    <button class="btn-logout" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+  </div>
+</header>
+
+<aside class="admin-nav">
+  <div class="nav-section">메뉴</div>
+  <a href="/admin/" class="active"><i class="fa-solid fa-chart-line"></i> <span>대시보드</span></a>
+  <a href="/admin/members"><i class="fa-solid fa-users"></i> <span>회원 관리</span></a>
+  <a href="/admin/reservations"><i class="fa-solid fa-ticket"></i> <span>예매 관리</span></a>
+  <a href="/admin/seats"><i class="fa-solid fa-map-location-dot"></i> <span>좌석 관리</span></a>
+</aside>
+
+<main class="admin-content">
+  <div class="page-header">
+    <div class="ph-icon"><i class="fa-solid fa-chart-line"></i></div>
+    <div>
+      <h1>관리자 대시보드</h1>
+      <p>전체 예매 현황 및 통계를 확인합니다.</p>
+    </div>
+  </div>
+
+  <!-- 통계 카드 (6개) -->
+  <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="stat-card blue">
+      <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
+      <div>
+        <div class="stat-num" id="totalUsers">-</div>
+        <div class="stat-lbl">총 회원 수</div>
+      </div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-icon"><i class="fa-solid fa-ticket"></i></div>
+      <div>
+        <div class="stat-num" id="confirmedRes">-</div>
+        <div class="stat-lbl">예매 완료</div>
+      </div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-icon"><i class="fa-solid fa-couch"></i></div>
+      <div>
+        <div class="stat-num" id="availableSeats">-</div>
+        <div class="stat-lbl">잔여석</div>
+      </div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-icon"><i class="fa-solid fa-ban"></i></div>
+      <div>
+        <div class="stat-num" id="cancelledRes">-</div>
+        <div class="stat-lbl">취소 건수</div>
+      </div>
+    </div>
+    <!-- 입금 현황 카드 -->
+    <div class="stat-card" style="border-color:#10B981">
+      <div class="stat-icon" style="background:#d1fae5;color:#10B981"><i class="fa-solid fa-won-sign"></i></div>
+      <div>
+        <div class="stat-num" id="paidCount" style="color:#10B981">-</div>
+        <div class="stat-lbl">입금 완료</div>
+      </div>
+    </div>
+    <div class="stat-card" style="border-color:#F59E0B">
+      <div class="stat-icon" style="background:#fef3c7;color:#d97706"><i class="fa-solid fa-clock"></i></div>
+      <div>
+        <div class="stat-num" id="unpaidCount" style="color:#d97706">-</div>
+        <div class="stat-lbl">입금 대기</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 좌석 예매율 게이지 -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="card-header"><i class="fa-solid fa-chart-bar"></i> 좌석 예매 현황</div>
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:14px;font-weight:600">
+        <span style="color:var(--gray)">예매율</span>
+        <span style="color:var(--primary)" id="rateLabel">0%</span>
+      </div>
+      <div style="background:var(--gray-mid);border-radius:10px;height:26px;overflow:hidden;position:relative">
+        <div id="rateBar" style="height:100%;background:linear-gradient(90deg,var(--primary),var(--primary-light));width:0%;transition:width 1.2s ease;border-radius:10px;min-width:0px"></div>
+        <!-- 입금완료 오버레이 바 -->
+        <div id="paidBar" style="position:absolute;top:0;left:0;height:100%;background:linear-gradient(90deg,rgba(16,185,129,.5),rgba(16,185,129,.3));width:0%;transition:width 1.2s ease 0.2s;border-radius:10px"></div>
+      </div>
+      <!-- 범례 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12.5px;color:var(--gray)">
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <span><i class="fa-solid fa-square" style="color:var(--primary);margin-right:4px"></i>예매 <strong id="confirmedLabel">-</strong>석</span>
+          <span><i class="fa-solid fa-square" style="color:#10B981;margin-right:4px"></i>입금완료 <strong id="paidLabel">-</strong>석</span>
+        </div>
+        <span>전체 <strong id="totalLabel">-</strong>석</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 입금 현황 바 -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="card-header"><i class="fa-solid fa-won-sign"></i> 입금 현황</div>
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:14px;font-weight:600">
+        <span style="color:var(--gray)">입금률 (예매자 중)</span>
+        <span style="color:#10B981" id="paidRateLabel">0%</span>
+      </div>
+      <div style="background:var(--gray-mid);border-radius:10px;height:22px;overflow:hidden">
+        <div id="paidRateBar" style="height:100%;background:linear-gradient(90deg,#10B981,#0e9e6e);width:0%;transition:width 1.2s ease 0.4s;border-radius:10px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--gray);margin-top:8px">
+        <span>입금완료: <strong id="paidCountLabel">-</strong>석</span>
+        <span>입금대기: <strong id="unpaidCountLabel">-</strong>석</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 빠른 작업 / 시스템 정보 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px">
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-bolt"></i> 빠른 작업</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+        <a href="/admin/members" class="btn btn-outline" style="justify-content:flex-start">
+          <i class="fa-solid fa-users"></i> 회원 목록 보기
+        </a>
+        <a href="/admin/reservations" class="btn btn-outline" style="justify-content:flex-start">
+          <i class="fa-solid fa-ticket"></i> 예매 현황 보기
+        </a>
+        <a href="/admin/seats" class="btn btn-outline" style="justify-content:flex-start">
+          <i class="fa-solid fa-map-location-dot"></i> 좌석 차단 관리
+        </a>
+        <button class="btn btn-secondary" onclick="exportExcel()" style="justify-content:flex-start">
+          <i class="fa-solid fa-file-excel"></i> 엑셀 다운로드
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-circle-info"></i> 시스템 정보</div>
+      <div class="card-body" style="font-size:13.5px;line-height:2.2;color:var(--gray)">
+        <div><i class="fa-solid fa-location-dot" style="color:var(--accent);width:20px;text-align:center;margin-right:6px"></i><strong>공연장</strong>: 선교 70주년 기념관 대강당</div>
+        <div><i class="fa-solid fa-couch" style="color:var(--accent);width:20px;text-align:center;margin-right:6px"></i><strong>총 좌석</strong>: 약 2,352석</div>
+        <div><i class="fa-solid fa-building" style="color:var(--primary);width:20px;text-align:center;margin-right:6px"></i><strong>1층</strong>: 가/나/다/라 구역 (1,398석)</div>
+        <div><i class="fa-solid fa-building-columns" style="color:var(--primary);width:20px;text-align:center;margin-right:6px"></i><strong>2층</strong>: 마~타 구역 (954석)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 예매 시스템 설정 ══ -->
+  <div class="card" style="border-top:3px solid var(--accent)">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+      <span><i class="fa-solid fa-gear"></i> 예매 시스템 설정</span>
+      <span id="configSaveMsg" style="font-size:12px;font-weight:400;color:#10B981;opacity:0;transition:opacity .4s"></span>
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:end">
+
+      <!-- 예매 오픈 시간 -->
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px">
+          <i class="fa-solid fa-clock" style="color:var(--accent);margin-right:6px"></i>
+          예매 오픈 시간 <span style="font-weight:400;color:var(--gray)">(서버 시간 기준)</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="datetime-local" id="inputOpenTime"
+            style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gray-mid);border-radius:8px;font-size:13px;font-family:inherit;color:var(--dark)"
+            oninput="markDirty()">
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap"
+                  onclick="clearOpenTime()">
+            <i class="fa-solid fa-xmark"></i> 제한 없음
+          </button>
+        </div>
+        <p style="font-size:11.5px;color:var(--gray);margin-top:5px">
+          <i class="fa-solid fa-circle-info" style="color:#3b82f6"></i>
+          설정 시 해당 시각 이전에는 예매 대기열 입장이 차단됩니다.
+          비워 두면 즉시 예매 가능합니다.
+        </p>
+        <div id="openTimeStatus" style="margin-top:6px;font-size:12.5px;font-weight:600"></div>
+      </div>
+
+      <!-- 동시 예매자수 -->
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px">
+          <i class="fa-solid fa-users" style="color:var(--accent);margin-right:6px"></i>
+          동시 예매 입장 인원 <span style="font-weight:400;color:var(--gray)">(최대 동시 활성 세션)</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="inputMaxActive" min="1" max="500" value="20"
+            style="width:100px;padding:9px 12px;border:1px solid var(--gray-mid);border-radius:8px;font-size:15px;font-weight:700;font-family:inherit;color:var(--dark);text-align:center"
+            oninput="markDirty()">
+          <span style="font-size:13px;color:var(--gray)">명</span>
+          <div style="display:flex;gap:4px;margin-left:4px">
+            <button class="btn btn-sm" style="background:#f0f4f8;color:#374151;border:1px solid #d1d5db;padding:6px 10px"
+                    onclick="adjustMax(-5)">−5</button>
+            <button class="btn btn-sm" style="background:#f0f4f8;color:#374151;border:1px solid #d1d5db;padding:6px 10px"
+                    onclick="adjustMax(5)">+5</button>
+          </div>
+        </div>
+        <p style="font-size:11.5px;color:var(--gray);margin-top:5px">
+          <i class="fa-solid fa-circle-info" style="color:#3b82f6"></i>
+          동시에 예매 화면에 입장할 수 있는 인원입니다. (권장: 5~30명)
+        </p>
+        <div style="font-size:12px;color:var(--gray);margin-top:4px">
+          현재 대기중: <strong id="queueWaiting">-</strong>명 /
+          예매중: <strong id="queueActive">-</strong>명
+        </div>
+      </div>
+    </div>
+
+    <!-- 저장 버튼 -->
+    <div style="padding:14px 20px 20px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--gray-mid);margin-top:16px">
+      <button class="btn" id="saveConfigBtn"
+              style="background:var(--primary);color:white;min-width:120px;font-size:14px"
+              onclick="saveConfig()">
+        <i class="fa-solid fa-floppy-disk"></i> 설정 저장
+      </button>
+    </div>
+  </div>
+</main>
+
+<script>
+let configDirty = false;
+
+(async () => {
+  const me = await fetch('/api/me').then(r => r.json());
+  if (!me.logged_in || me.role !== 'admin') { location.href = '/'; return; }
+  document.getElementById('adminName').textContent = me.name + ' 관리자';
+
+  const s = await fetch('/api/admin/stats').then(r => r.json());
+
+  // 통계 카드
+  document.getElementById('totalUsers').textContent     = s.total_users.toLocaleString();
+  document.getElementById('confirmedRes').textContent   = s.confirmed.toLocaleString();
+  document.getElementById('cancelledRes').textContent   = s.cancelled.toLocaleString();
+  document.getElementById('availableSeats').textContent = s.available.toLocaleString();
+  document.getElementById('paidCount').textContent      = s.paid.toLocaleString();
+  document.getElementById('unpaidCount').textContent    = s.unpaid.toLocaleString();
+
+  // 예매율 게이지
+  const total = s.total_seats || 1;
+  const rate  = s.confirmed / total * 100;
+  const paidRate = s.confirmed > 0 ? (s.paid / s.confirmed * 100) : 0;
+
+  document.getElementById('rateLabel').textContent      = rate.toFixed(1) + '%';
+  document.getElementById('confirmedLabel').textContent = s.confirmed.toLocaleString();
+  document.getElementById('paidLabel').textContent      = s.paid.toLocaleString();
+  document.getElementById('totalLabel').textContent     = s.total_seats.toLocaleString();
+
+  // 입금현황
+  document.getElementById('paidRateLabel').textContent    = paidRate.toFixed(1) + '%';
+  document.getElementById('paidCountLabel').textContent   = s.paid.toLocaleString();
+  document.getElementById('unpaidCountLabel').textContent = s.unpaid.toLocaleString();
+
+  setTimeout(() => {
+    const barW     = s.confirmed > 0 ? Math.max(0.3, rate) : 0;
+    const paidBarW = s.paid > 0 ? Math.max(0.3, s.paid / total * 100) : 0;
+    document.getElementById('rateBar').style.width     = barW + '%';
+    document.getElementById('paidBar').style.width     = paidBarW + '%';
+    document.getElementById('paidRateBar').style.width = (s.confirmed > 0 ? Math.max(0.5, paidRate) : 0) + '%';
+  }, 300);
+
+  // ── 시스템 설정 로드 ──
+  await loadConfig();
+
+  // 대기열 현황 주기 갱신
+  updateQueueInfo();
+  setInterval(updateQueueInfo, 10000);
+})();
+
+/* ── 설정 로드 ── */
+async function loadConfig() {
+  try {
+    const cfg = await fetch('/api/admin/config').then(r => r.json());
+
+    // 예매 오픈 시간: "2026-05-20 10:00:00" → datetime-local 형식 "2026-05-20T10:00"
+    if (cfg.booking_open_time) {
+      const dt = cfg.booking_open_time.replace(' ', 'T').slice(0, 16);
+      document.getElementById('inputOpenTime').value = dt;
+      updateOpenTimeStatus(cfg.booking_open_time);
+    } else {
+      document.getElementById('openTimeStatus').innerHTML =
+        '<i class="fa-solid fa-circle-check" style="color:#10B981"></i> <span style="color:#10B981">제한 없음 — 즉시 예매 가능</span>';
+    }
+
+    // 동시 예매자수
+    document.getElementById('inputMaxActive').value = cfg.max_active || 20;
+    configDirty = false;
+  } catch (e) {
+    console.error('config load error:', e);
+  }
+}
+
+/* ── 오픈 시간 상태 표시 ── */
+function updateOpenTimeStatus(openTimeStr) {
+  const el = document.getElementById('openTimeStatus');
+  if (!openTimeStr) {
+    el.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10B981"></i> <span style="color:#10B981">제한 없음 — 즉시 예매 가능</span>';
+    return;
+  }
+  const openDt = new Date(openTimeStr.replace(' ', 'T'));
+  const now    = new Date();
+  if (now < openDt) {
+    const diff = Math.ceil((openDt - now) / 60000);
+    const h = Math.floor(diff / 60), m = diff % 60;
+    const timeStr = h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+    el.innerHTML = `<i class="fa-solid fa-hourglass-half" style="color:#f59e0b"></i> <span style="color:#d97706">오픈까지 약 ${timeStr} 남음 (${formatKorDate(openDt)})</span>`;
+  } else {
+    el.innerHTML = `<i class="fa-solid fa-circle-check" style="color:#10B981"></i> <span style="color:#10B981">예매 오픈 완료 (${formatKorDate(openDt)})</span>`;
+  }
+}
+
+function formatKorDate(dt) {
+  const pad = n => String(n).padStart(2, '0');
+  const ampm = dt.getHours() < 12 ? '오전' : '오후';
+  const h12  = dt.getHours() % 12 || 12;
+  return `${dt.getFullYear()}년 ${dt.getMonth()+1}월 ${dt.getDate()}일 ${ampm} ${h12}:${pad(dt.getMinutes())}`;
+}
+
+/* ── 대기열 현황 ── */
+async function updateQueueInfo() {
+  try {
+    const q = await fetch('/api/queue/info').then(r => r.json());
+    document.getElementById('queueActive').textContent  = q.active  ?? '-';
+    document.getElementById('queueWaiting').textContent = q.waiting ?? '-';
+  } catch (e) {}
+}
+
+/* ── 오픈 시간 초기화 ── */
+function clearOpenTime() {
+  document.getElementById('inputOpenTime').value = '';
+  document.getElementById('openTimeStatus').innerHTML =
+    '<i class="fa-solid fa-circle-check" style="color:#10B981"></i> <span style="color:#10B981">제한 없음 — 즉시 예매 가능</span>';
+  markDirty();
+}
+
+function adjustMax(delta) {
+  const el  = document.getElementById('inputMaxActive');
+  const val = Math.min(500, Math.max(1, (parseInt(el.value) || 20) + delta));
+  el.value  = val;
+  markDirty();
+}
+
+function markDirty() { configDirty = true; }
+
+/* ── 설정 저장 ── */
+async function saveConfig() {
+  const btn        = document.getElementById('saveConfigBtn');
+  const msgEl      = document.getElementById('configSaveMsg');
+  const rawTime    = document.getElementById('inputOpenTime').value.trim();
+  const maxActive  = parseInt(document.getElementById('inputMaxActive').value) || 20;
+
+  // datetime-local "2026-05-20T10:00" → "2026-05-20 10:00:00"
+  let openTimeStr = '';
+  if (rawTime) {
+    openTimeStr = rawTime.replace('T', ' ') + ':00';
+  }
+
+  btn.disabled  = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...';
+
+  try {
+    const res  = await fetch('/api/admin/config', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ booking_open_time: openTimeStr, max_active: maxActive })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      configDirty = false;
+      btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
+      btn.disabled  = false;
+
+      msgEl.textContent = '✓ 저장되었습니다';
+      msgEl.style.opacity = '1';
+      setTimeout(() => msgEl.style.opacity = '0', 2500);
+
+      // 오픈 시간 상태 업데이트
+      updateOpenTimeStatus(openTimeStr);
+    } else {
+      alert(data.error || '저장에 실패했습니다.');
+      btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
+      btn.disabled  = false;
+    }
+  } catch (e) {
+    alert('네트워크 오류가 발생했습니다.');
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
+    btn.disabled  = false;
+  }
+}
+
+function exportExcel() { window.location.href = '/api/admin/export'; }
+async function doLogout() { await fetch('/api/logout', { method: 'POST' }); location.href = '/'; }
+</script>
+</body>
+</html>

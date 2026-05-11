@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회원가입 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-house"></i> 홈</a>
+    <a href="/login"><i class="fa-solid fa-right-to-bracket"></i> 로그인</a>
+  </nav>
+</header>
+
+<div class="auth-wrap" style="padding:32px 16px">
+  <div class="auth-box" style="max-width:540px">
+    <div class="logo">
+      <div class="logo-icon"><i class="fa-solid fa-user-plus"></i></div>
+      <h2>회원가입</h2>
+      <p>예아단 특별공연 티켓 예매를 위해 계정을 만들어주세요</p>
+    </div>
+
+    <div id="alertBox" class="alert"></div>
+
+    <form id="regForm">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+        <div class="form-group" style="grid-column:1/-1">
+          <label><i class="fa-solid fa-at" style="color:var(--primary);margin-right:4px"></i> 아이디 <span>*</span></label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="username" class="form-control" placeholder="영문/숫자 4~20자" required>
+            <button type="button" class="btn btn-outline" onclick="checkId()" style="white-space:nowrap;flex-shrink:0">
+              <i class="fa-solid fa-magnifying-glass"></i> 중복확인
+            </button>
+          </div>
+          <div class="form-error" id="usernameErr"></div>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock" style="color:var(--primary);margin-right:4px"></i> 비밀번호 <span>*</span></label>
+          <input type="password" id="password" class="form-control" placeholder="8자 이상" required>
+          <div class="form-error" id="passwordErr"></div>
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock" style="color:var(--primary);margin-right:4px"></i> 비밀번호 확인 <span>*</span></label>
+          <input type="password" id="password2" class="form-control" placeholder="비밀번호 재입력" required>
+          <div class="form-error" id="password2Err"></div>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-user" style="color:var(--primary);margin-right:4px"></i> 성명 <span>*</span></label>
+          <input type="text" id="name" class="form-control" placeholder="실명 입력" required>
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-phone" style="color:var(--primary);margin-right:4px"></i> 전화번호 <span>*</span></label>
+          <input type="tel" id="phone" class="form-control" placeholder="010-0000-0000" required>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-church" style="color:var(--primary);margin-right:4px"></i> 출석교회 <span>*</span></label>
+          <input type="text" id="church" class="form-control" placeholder="교회명 입력" required>
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-id-badge" style="color:var(--primary);margin-right:4px"></i> 직분 <span>*</span></label>
+          <select id="position" class="form-control" required>
+            <option value="">직분 선택</option>
+            <option>성도</option>
+            <option>집사</option>
+            <option>장로</option>
+            <option>목사</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="grid-column:1/-1">
+          <div class="check-wrap" style="align-items:flex-start;gap:8px">
+            <input type="checkbox" id="agreeCheck" required style="margin-top:3px;flex-shrink:0">
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <label for="agreeCheck" style="margin:0;font-weight:400;font-size:13px;line-height:1.5;cursor:pointer">
+                <strong>개인정보 수집·이용에 동의</strong>합니다.
+                <span style="color:#6b7280;font-size:12px">(성명, 연락처, 교회명, 교회직분 - 예매 서비스 제공 목적)</span>
+              </label>
+              <button type="button" onclick="openPrivacyModal()"
+                style="display:inline-flex;align-items:center;gap:4px;
+                       width:fit-content;padding:4px 12px;
+                       background:#f0f4f8;border:1px solid #d1d9e6;
+                       border-radius:99px;font-size:11.5px;font-weight:600;
+                       color:var(--primary);cursor:pointer;transition:all .2s">
+                <i class="fa-solid fa-file-lines"></i> 약관 상세 보기
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;justify-content:center">
+        <i class="fa-solid fa-user-plus"></i> 회원가입 완료
+      </button>
+    </form>
+
+    <div style="text-align:center;font-size:13.5px;color:var(--gray);margin-top:18px">
+      이미 계정이 있으신가요?
+      <a href="/login" style="color:var(--primary);font-weight:700"> 로그인</a>
+    </div>
+  </div>
+</div>
+
+<script>
+let idChecked = false;
+
+async function checkId() {
+  const val = document.getElementById('username').value.trim();
+  const err = document.getElementById('usernameErr');
+  if (val.length < 4 || val.length > 20) {
+    err.textContent = '아이디는 4~20자여야 합니다.';
+    err.classList.add('show'); idChecked = false; return;
+  }
+  const res = await fetch(`/api/check-username?username=${encodeURIComponent(val)}`);
+  const d = await res.json();
+  if (d.available) {
+    err.textContent = '✅ 사용 가능한 아이디입니다.';
+    err.style.color = 'var(--success)'; err.classList.add('show');
+    idChecked = true;
+  } else {
+    err.textContent = '이미 사용 중인 아이디입니다.';
+    err.style.color = 'var(--danger)'; err.classList.add('show');
+    idChecked = false;
+  }
+}
+
+document.getElementById('regForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+
+  if (!idChecked) { alert('아이디 중복 확인을 해주세요.'); return; }
+  const pw  = document.getElementById('password').value;
+  const pw2 = document.getElementById('password2').value;
+  if (pw !== pw2) {
+    document.getElementById('password2Err').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('password2Err').classList.add('show'); return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+
+  const res = await fetch('/api/register', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      username: document.getElementById('username').value.trim(),
+      password: pw,
+      name:     document.getElementById('name').value.trim(),
+      phone:    document.getElementById('phone').value.trim(),
+      church:   document.getElementById('church').value.trim(),
+      position: document.getElementById('position').value,
+    })
+  });
+  const data = await res.json();
+
+  if (res.ok) {
+    const al = document.getElementById('alertBox');
+    al.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + data.message + ' 로그인 페이지로 이동합니다.';
+    al.className = 'alert alert-success show';
+    setTimeout(() => location.href = '/login', 2000);
+  } else {
+    const al = document.getElementById('alertBox');
+    al.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + data.error;
+    al.className = 'alert alert-danger show';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> 회원가입 완료';
+  }
+});
+</script>
+
+<!-- ══════════════════════════════════════════════════
+     개인정보 수집·이용 동의 모달
+══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-privacy" onclick="if(event.target===this)closePrivacyModal()">
+  <div class="modal-box" style="max-width:500px">
+
+    <!-- 헤더 -->
+    <div class="modal-header" style="background:#f8faff;border-bottom:1px solid #dbeafe">
+      <div class="modal-header-icon" style="background:#dbeafe;color:#2563eb">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <h2 style="font-size:16px;font-weight:700;color:#1e293b;flex:1">개인정보 수집·이용 동의서</h2>
+      <button class="modal-close" onclick="closePrivacyModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <!-- 본문 -->
+    <div class="modal-body" style="gap:16px">
+
+      <!-- 항목 1: 수집·이용 목적 -->
+      <div class="modal-section">
+        <div class="modal-section-title" style="color:#1d4ed8">
+          <i class="fa-solid fa-bullseye" style="color:#3b82f6"></i>
+          1. 개인정보 수집·이용 목적
+        </div>
+        <ul class="modal-list" style="margin-top:4px">
+          <li>예아단 정기공연 <strong>예매자 정보 수집 목적</strong> 외 다른 용도로 사용하지 않습니다.</li>
+          <li>예아단 정기공연 <strong>예매정보 및 공연정보 발송</strong> 외 다른 용도로 사용하지 않습니다.</li>
+        </ul>
+      </div>
+
+      <!-- 구분선 -->
+      <hr style="border:none;border-top:1px solid #f1f5f9">
+
+      <!-- 항목 2: 수집 항목 -->
+      <div class="modal-section">
+        <div class="modal-section-title" style="color:#1d4ed8">
+          <i class="fa-solid fa-list-check" style="color:#3b82f6"></i>
+          2. 개인정보 수집 항목
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          <span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+                       font-size:12px;font-weight:600;padding:4px 12px;border-radius:99px">
+            <i class="fa-solid fa-user" style="margin-right:4px;font-size:11px"></i>성함
+          </span>
+          <span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+                       font-size:12px;font-weight:600;padding:4px 12px;border-radius:99px">
+            <i class="fa-solid fa-phone" style="margin-right:4px;font-size:11px"></i>연락처
+          </span>
+          <span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+                       font-size:12px;font-weight:600;padding:4px 12px;border-radius:99px">
+            <i class="fa-solid fa-church" style="margin-right:4px;font-size:11px"></i>교회명
+          </span>
+          <span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+                       font-size:12px;font-weight:600;padding:4px 12px;border-radius:99px">
+            <i class="fa-solid fa-id-badge" style="margin-right:4px;font-size:11px"></i>교회직분
+          </span>
+          <span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;
+                       font-size:12px;font-weight:600;padding:4px 12px;border-radius:99px">
+            <i class="fa-solid fa-building-columns" style="margin-right:4px;font-size:11px"></i>계좌번호
+          </span>
+        </div>
+      </div>
+
+      <!-- 구분선 -->
+      <hr style="border:none;border-top:1px solid #f1f5f9">
+
+      <!-- 항목 3: 보유 및 이용기간 -->
+      <div class="modal-section">
+        <div class="modal-section-title" style="color:#1d4ed8">
+          <i class="fa-solid fa-clock" style="color:#3b82f6"></i>
+          3. 개인정보 보유 및 이용기간
+        </div>
+        <div style="background:#f8faff;border:1px solid #dbeafe;border-radius:10px;
+                    padding:12px 14px;margin-top:6px;
+                    font-size:13px;color:#1e3a5f;font-weight:600">
+          <i class="fa-solid fa-calendar-check" style="color:#3b82f6;margin-right:7px"></i>
+          공연 종료 시까지
+        </div>
+      </div>
+
+      <!-- 구분선 -->
+      <hr style="border:none;border-top:1px solid #f1f5f9">
+
+      <!-- 항목 5: 동의 거부 -->
+      <div class="modal-section modal-warn-box" style="border-left-color:#f59e0b">
+        <div class="modal-section-title" style="color:#92400e;margin-bottom:6px">
+          <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i>
+          5. 동의 거부 및 미동의 처리
+        </div>
+        <p style="font-size:13px;color:#374151;line-height:1.7">
+          개인정보 수집·이용 동의를 <strong>거부할 수 있습니다.</strong><br>
+          다만, 동의하지 않을 경우 <strong>예매 신청과 확인이 어려울 수 있습니다.</strong>
+        </p>
+      </div>
+
+    </div>
+
+    <!-- 푸터: 동의하고 닫기 버튼 -->
+    <div style="padding:14px 22px 18px;border-top:1px solid #f1f5f9;
+                display:flex;gap:10px;justify-content:flex-end">
+      <button type="button" onclick="closePrivacyModal()"
+        style="padding:9px 20px;border-radius:8px;border:1px solid #d1d9e6;
+               background:#f8faff;color:#6b7280;font-size:13.5px;font-weight:600;cursor:pointer">
+        닫기
+      </button>
+      <button type="button" onclick="agreeAndClose()"
+        style="padding:9px 22px;border-radius:8px;border:none;
+               background:var(--primary);color:white;font-size:13.5px;font-weight:700;
+               cursor:pointer;display:flex;align-items:center;gap:6px">
+        <i class="fa-solid fa-circle-check"></i> 동의하고 닫기
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function openPrivacyModal() {
+  document.getElementById('modal-privacy').classList.add('modal-open');
+  document.body.style.overflow = 'hidden';
+}
+function closePrivacyModal() {
+  document.getElementById('modal-privacy').classList.remove('modal-open');
+  document.body.style.overflow = '';
+}
+function agreeAndClose() {
+  document.getElementById('agreeCheck').checked = true;
+  closePrivacyModal();
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closePrivacyModal();
+});
+</script>
+</body>
+</html>

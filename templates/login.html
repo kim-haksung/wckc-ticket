@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그인 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-house"></i> 홈</a>
+    <a href="/register"><i class="fa-solid fa-user-plus"></i> 회원가입</a>
+  </nav>
+</header>
+
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="logo">
+      <div class="logo-icon"><i class="fa-solid fa-right-to-bracket"></i></div>
+      <h2>로그인</h2>
+      <p>예아단 특별공연 티켓 예매 시스템</p>
+    </div>
+
+    <div id="alertBox" class="alert"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label><i class="fa-solid fa-user" style="color:var(--primary);margin-right:4px"></i> 아이디</label>
+        <input type="text" id="username" class="form-control" placeholder="아이디 입력" required>
+      </div>
+      <div class="form-group">
+        <label><i class="fa-solid fa-lock" style="color:var(--primary);margin-right:4px"></i> 비밀번호</label>
+        <input type="password" id="password" class="form-control" placeholder="비밀번호 입력" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;justify-content:center">
+        <i class="fa-solid fa-right-to-bracket"></i> 로그인
+      </button>
+    </form>
+
+    <div class="divider"><span>또는</span></div>
+    <div style="text-align:center;font-size:13.5px;color:var(--gray)">
+      계정이 없으신가요?
+      <a href="/register" style="color:var(--primary);font-weight:700"> 회원가입</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const redirect = "{{ redirect or '/' }}";
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 로그인 중...';
+
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      username: document.getElementById('username').value,
+      password: document.getElementById('password').value
+    })
+  });
+  const data = await res.json();
+
+  if (res.ok) {
+    location.href = data.role === 'admin' ? '/admin/' : redirect;
+  } else {
+    const al = document.getElementById('alertBox');
+    al.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + data.error;
+    al.className = 'alert alert-danger show';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> 로그인';
+  }
+});
+</script>
+</body>
+</html>

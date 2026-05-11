@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>예매 티켓 - {{ res_code }}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* ── 공통 ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+  background: #e8edf3;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  gap: 20px;
+}
+
+/* ── 인쇄 버튼 (화면에서만 표시) ── */
+.print-bar {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  justify-content: center;
+}
+.print-bar button {
+  padding: 10px 28px;
+  border: none; border-radius: 8px;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
+}
+.btn-print  { background: #1e3a5f; color: #fff; }
+.btn-print:hover  { background: #2c5282; }
+.btn-jpg    { background: #047857; color: #fff; }
+.btn-jpg:hover    { background: #065f46; }
+.btn-close  { background: #6b7280; color: #fff; }
+.btn-close:hover  { background: #4b5563; }
+.btn-spin   { opacity: .7; cursor: not-allowed; }
+
+/* ── 티켓 카드 ── */
+.ticket {
+  width: 680px;
+  max-width: 100%;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.20);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 티켓 헤더 ── */
+.ticket-header {
+  background: linear-gradient(135deg, #0f2035 0%, #1e3a5f 50%, #0f2035 100%);
+  padding: 26px 30px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+.ticket-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #e8a820, #f5c842, #e8a820);
+}
+.event-title {
+  color: #fff;
+}
+.event-title h1 {
+  font-size: 22px;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.event-title p {
+  font-size: 12px;
+  color: #93b8d4;
+  letter-spacing: 2px;
+}
+.ticket-logo {
+  width: 52px; height: 52px;
+  background: rgba(232,168,32,.15);
+  border: 2px solid #e8a820;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #e8a820;
+  font-size: 22px;
+}
+
+/* ── 메인 영역 ── */
+.ticket-body {
+  display: flex;
+  flex: 1;
+}
+
+/* 좌석 정보 (왼쪽) */
+.seat-section {
+  flex: 1;
+  padding: 28px 28px 24px;
+  border-right: 2px dashed #d1d5db;
+  position: relative;
+}
+.seat-section::before,
+.seat-section::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  width: 24px; height: 24px;
+  background: #e8edf3;
+  border-radius: 50%;
+}
+.seat-section::before { top: -12px; }
+.seat-section::after  { bottom: -12px; }
+
+.section-label {
+  font-size: 11px;
+  color: #6b7280;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.seat-big {
+  font-size: 48px;
+  font-weight: 900;
+  color: #1e3a5f;
+  line-height: 1;
+  letter-spacing: -1px;
+}
+.seat-detail {
+  margin-top: 8px;
+  font-size: 18px;
+  color: #374151;
+  font-weight: 700;
+}
+.seat-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 24px;
+}
+.info-item label {
+  display: block;
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+.info-item span {
+  font-size: 13.5px;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+/* 예약번호/바코드 (오른쪽 스텁) */
+.stub-section {
+  width: 160px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: #f8fafc;
+}
+.stub-label {
+  font-size: 10px;
+  color: #9ca3af;
+  letter-spacing: 1px;
+  text-align: center;
+  font-weight: 600;
+}
+.res-code-box {
+  background: #1e3a5f;
+  color: #e8a820;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  word-break: break-all;
+  text-align: center;
+  letter-spacing: .5px;
+  width: 100%;
+}
+
+/* 바코드 스타일 그래픽 */
+.barcode {
+  width: 100%;
+  height: 70px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 4px;
+}
+.barcode-bar {
+  flex: 1;
+  background: #1e3a5f;
+  border-radius: 1px;
+}
+
+.stub-seat {
+  text-align: center;
+}
+.stub-seat .floor {
+  font-size: 11px;
+  color: #6b7280;
+}
+.stub-seat .sec-no {
+  font-size: 20px;
+  font-weight: 900;
+  color: #1e3a5f;
+}
+
+/* 입금 상태 배지 */
+.payment-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 700;
+  width: 100%; justify-content: center;
+}
+.payment-badge.paid    { background: #d1fae5; color: #065f46; }
+.payment-badge.unpaid  { background: #fef3c7; color: #92400e; }
+
+/* ── 티켓 푸터 ── */
+.ticket-footer {
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  padding: 12px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: #6b7280;
+}
+.ticket-footer strong {
+  color: #374151;
+}
+
+/* ── 안내 문구 ── */
+.notice {
+  width: 680px;
+  max-width: 100%;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  padding: 14px 20px;
+  font-size: 12.5px;
+  color: #92400e;
+  line-height: 1.9;
+}
+.notice strong {
+  display: block;
+  color: #78350f;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+/* ── 인쇄 스타일 ── */
+@media print {
+  body {
+    background: #fff;
+    padding: 0;
+    justify-content: flex-start;
+  }
+  .print-bar, .notice { display: none !important; }
+  .ticket {
+    box-shadow: none;
+    border: 1px solid #ccc;
+    border-radius: 0;
+    page-break-inside: avoid;
+  }
+  .seat-section::before,
+  .seat-section::after {
+    background: #fff;
+  }
+  @page {
+    size: A5 landscape;
+    margin: 10mm;
+  }
+}
+</style>
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+
+<!-- 화면 버튼 -->
+<div class="print-bar">
+  <button class="btn-print" onclick="window.print()">
+    <i class="fa-solid fa-print"></i> PDF / 인쇄
+  </button>
+  <button class="btn-jpg" id="jpgBtn" onclick="downloadJpg()">
+    <i class="fa-solid fa-image"></i> JPG 저장
+  </button>
+  <button class="btn-jpg" id="mobileBtn" onclick="downloadMobile()"
+          style="background:#7c3aed">
+    <i class="fa-solid fa-mobile-screen"></i> 핸드폰용 저장
+  </button>
+  <button class="btn-close" onclick="window.close()">
+    <i class="fa-solid fa-xmark"></i> 닫기
+  </button>
+</div>
+
+<!-- ═══ 티켓 ═══ -->
+<div class="ticket">
+
+  <!-- 헤더 -->
+  <div class="ticket-header">
+    <div class="event-title">
+      <h1><i class="fa-solid fa-music" style="color:#e8a820;margin-right:8px"></i>예아단 특별공연</h1>
+      <p>YEADAN SPECIAL CONCERT · ADMISSION TICKET</p>
+    </div>
+    <div class="ticket-logo">
+      <i class="fa-solid fa-ticket"></i>
+    </div>
+  </div>
+
+  <!-- 바디 -->
+  <div class="ticket-body">
+
+    <!-- 좌석·예약자 정보 -->
+    <div class="seat-section">
+      <div class="section-label">좌석 정보 / SEAT</div>
+      <div class="seat-big">{{ section }} 구역</div>
+      <div class="seat-detail">{{ floor_str }} &nbsp;|&nbsp; {{ seat_no }}번 좌석</div>
+      <div class="seat-sub">
+        <i class="fa-solid fa-location-dot" style="color:#e8a820;margin-right:4px"></i>
+        선교 70주년 기념관 대강당
+      </div>
+
+      <div class="info-grid">
+        <div class="info-item" style="grid-column:1/-1">
+          <label><i class="fa-solid fa-user" style="margin-right:4px"></i>예매자</label>
+          <span>{{ name }} ({{ position }})</span>
+        </div>
+        <div class="info-item">
+          <label><i class="fa-solid fa-church" style="margin-right:4px"></i>출석교회</label>
+          <span>{{ church }}</span>
+        </div>
+        <div class="info-item">
+          <label><i class="fa-solid fa-phone" style="margin-right:4px"></i>연락처</label>
+          <span>{{ phone }}</span>
+        </div>
+        <div class="info-item" style="grid-column:1/-1">
+          <label><i class="fa-solid fa-clock" style="margin-right:4px"></i>예매일시</label>
+          <span>{{ reserved_at }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 오른쪽 스텁 -->
+    <div class="stub-section">
+      <div class="stub-label">RESERVATION NO.</div>
+      <div class="res-code-box">{{ res_code }}</div>
+
+      <!-- 바코드 그래픽 -->
+      <div class="barcode">
+        {% set bars = [8,4,12,3,7,10,2,5,9,6,11,3,8,4,13,2,7,10,5,9] %}
+        {% for h in bars %}
+          <div class="barcode-bar" style="height:{{ h * 4 + 20 }}px"></div>
+        {% endfor %}
+      </div>
+
+      <!-- 좌석 요약 -->
+      <div class="stub-seat">
+        <div class="floor">{{ floor_str }}</div>
+        <div class="sec-no">{{ section }}·{{ seat_no }}번</div>
+      </div>
+
+      <!-- 입금 상태 -->
+      {% if is_admin_ticket %}
+        <div class="payment-badge" style="background:#fef3c7;color:#92400e;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;width:100%;justify-content:center">
+          <i class="fa-solid fa-star"></i> 특별 초대장
+        </div>
+      {% elif payment_status == 'paid' %}
+        <div class="payment-badge paid">
+          <i class="fa-solid fa-circle-check"></i> 입금 완료
+        </div>
+      {% else %}
+        <div class="payment-badge unpaid">
+          <i class="fa-solid fa-clock"></i> 입금 대기
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 푸터 -->
+  <div class="ticket-footer">
+    <span><strong>공연장</strong> &nbsp;선교 70주년 기념관 대강당</span>
+    <span><strong>주최</strong> &nbsp;서중한합회 어린이부</span>
+    <span style="color:#9ca3af;font-size:10px">이 티켓은 1회 유효합니다</span>
+  </div>
+</div>
+
+<!-- 안내문 (화면에서만 표시) -->
+<div class="notice">
+  <strong><i class="fa-solid fa-circle-info" style="margin-right:6px"></i>인쇄 / 저장 안내</strong>
+  <strong>[PDF / 인쇄]</strong> → 인쇄 화면에서 "PDF로 저장" 선택 시 PDF로 저장됩니다.<br>
+  <strong>[JPG 저장]</strong> → 티켓 이미지가 JPG 파일로 자동 다운로드됩니다.<br>
+  입금 완료 후 공연 당일 이 티켓을 출력하거나 스마트폰 화면으로 제시해 주세요.
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+async function downloadJpg() {
+  const btn = document.getElementById('jpgBtn');
+  btn.classList.add('btn-spin');
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 생성 중...';
+  try {
+    const el = document.querySelector('.ticket');
+    const canvas = await html2canvas(el, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false
+    });
+    const link = document.createElement('a');
+    link.download = 'ticket_' + {{ res_code|tojson }} + '.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) {
+    alert('JPG 저장 중 오류가 발생했습니다: ' + e.message);
+  } finally {
+    btn.classList.remove('btn-spin');
+    btn.innerHTML = '<i class="fa-solid fa-image"></i> JPG 저장';
+  }
+}
+
+/* ── 모서리 둥글게 헬퍼 ── */
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ────────────────────────────────────────────────────────────────
+   모바일 티켓 아이콘 헬퍼
+──────────────────────────────────────────────── */
+function drawMobileIcon(ctx, cx, cy, type) {
+  ctx.save();
+  const S = 11; // 아이콘 기본 크기
+  ctx.fillStyle = '#6b7280';
+  ctx.strokeStyle = '#6b7280';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (type === 'user') {
+    // 머리
+    ctx.beginPath(); ctx.arc(cx, cy - S * 0.45, S * 0.38, 0, Math.PI * 2); ctx.fill();
+    // 어깨
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + S * 0.55, S * 0.52, S * 0.38, 0, Math.PI, 0);
+    ctx.fill();
+  } else if (type === 'church') {
+    // 건물 본체
+    ctx.fillRect(cx - S * 0.48, cy - S * 0.1, S * 0.96, S * 0.8);
+    // 지붕
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - S * 0.78); ctx.lineTo(cx - S * 0.56, cy - S * 0.1);
+    ctx.lineTo(cx + S * 0.56, cy - S * 0.1); ctx.closePath(); ctx.fill();
+    // 십자가
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(cx, cy - S * 0.78); ctx.lineTo(cx, cy - S * 1.08); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - S * 0.18, cy - S * 0.98); ctx.lineTo(cx + S * 0.18, cy - S * 0.98); ctx.stroke();
+    // 문
+    ctx.fillStyle = '#d1d5db';
+    ctx.fillRect(cx - S * 0.18, cy + S * 0.22, S * 0.36, S * 0.48);
+  } else if (type === 'phone') {
+    // 핸드셋 모양
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    // 수화기 상단 호
+    ctx.arc(cx - S * 0.22, cy - S * 0.32, S * 0.3, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    // 수화기 하단 호
+    ctx.beginPath();
+    ctx.arc(cx + S * 0.22, cy + S * 0.32, S * 0.3, Math.PI * 0.1, Math.PI * 0.9);
+    ctx.stroke();
+    // 연결선
+    ctx.beginPath(); ctx.moveTo(cx - S * 0.1, cy - S * 0.12); ctx.lineTo(cx + S * 0.1, cy + S * 0.12); ctx.stroke();
+  } else if (type === 'clock') {
+    // 시계 외곽
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.arc(cx, cy, S * 0.62, 0, Math.PI * 2);
+    ctx.fillStyle = '#f3f4f6'; ctx.fill();
+    ctx.strokeStyle = '#6b7280'; ctx.stroke();
+    // 시침 (10시)
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - S * 0.28, cy - S * 0.3); ctx.stroke();
+    // 분침 (2시)
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + S * 0.28, cy - S * 0.28); ctx.stroke();
+    // 중심점
+    ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fillStyle = '#6b7280'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+async function downloadMobile() {
+  const btn = document.getElementById('mobileBtn');
+  btn.classList.add('btn-spin');
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 생성 중...';
+  try {
+    /* ── 캔버스 설정 ── */
+    const W = 750, H = 1500;
+    const PW = W, PH = H; // 하위 호환용 별칭
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    const F = '"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+
+    // ── Jinja2 템플릿 값 (서버 렌더링) ──
+    const FLOOR  = {{ floor_str|tojson }};
+    const SEC    = {{ section|tojson }};
+    const SEAT   = {{ seat_no|tojson }};
+    const CODE   = {{ res_code|tojson }};
+    const UNAME  = {{ name|tojson }};
+    const POS    = {{ position|tojson }};
+    const CHURCH = {{ church|tojson }};
+    const PHONE  = {{ phone|tojson }};
+    const RESAT  = {{ reserved_at|tojson }};
+    {% if is_admin_ticket %}
+    const PAY = 'admin';
+    {% elif payment_status == 'paid' %}
+    const PAY = 'paid';
+    {% else %}
+    const PAY = 'unpaid';
+    {% endif %}
+
+    /* ── 1. 전체 배경 (연한 회색) ── */
+    ctx.fillStyle = '#f4f6fa';
+    ctx.fillRect(0, 0, W, H);
+
+    /* ── 2. 헤더 (네이비, 아래 볼록 곡선) ── */
+    const HDR_H = 340;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(W, 0);
+    ctx.lineTo(W, HDR_H - 10);
+    ctx.quadraticCurveTo(W / 2, HDR_H + 62, 0, HDR_H - 10);
+    ctx.closePath();
+    ctx.fillStyle = '#0f2035';
+    ctx.fill();
+    ctx.restore();
+
+    // 헤더 하단 골드 곡선 테두리
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, HDR_H - 12);
+    ctx.quadraticCurveTo(W / 2, HDR_H + 60, W, HDR_H - 12);
+    ctx.strokeStyle = '#e8a820';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+
+    // 음표 기호
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '58px serif';
+    ctx.fillStyle = '#e8a820';
+    ctx.fillText('♪', W / 2, 88);
+    ctx.restore();
+
+    // 메인 타이틀
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 68px ${F}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.28)';
+    ctx.shadowBlur = 10;
+    ctx.fillText('예아단 특별공연', W / 2, 178);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 서브타이틀
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `26px ${F}`;
+    ctx.fillStyle = 'rgba(196,215,255,0.85)';
+    ctx.fillText('YEADAN SPECIAL CONCERT', W / 2, 218);
+    ctx.font = `23px ${F}`;
+    ctx.fillText('· ADMISSION TICKET ·', W / 2, 252);
+    ctx.restore();
+
+    /* ── 3. 배지 (티켓 아이콘 원) ── */
+    const BDG_CX = W / 2, BDG_CY = HDR_H + 8;
+    const BDG_R  = 48;
+
+    // 배경 흰 원 (헤더 배경과 분리)
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(BDG_CX, BDG_CY, BDG_R + 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4f6fa';
+    ctx.fill();
+    ctx.restore();
+
+    // 골드 링
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(BDG_CX, BDG_CY, BDG_R + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#e8a820';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // 네이비 원
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(BDG_CX, BDG_CY, BDG_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fill();
+    ctx.restore();
+
+    // 티켓 아이콘 (사각형 + 노치)
+    ctx.save();
+    const TW = 52, TH = 32, TX = BDG_CX - TW / 2, TY = BDG_CY - TH / 2;
+    ctx.strokeStyle = '#e8a820';
+    ctx.lineWidth = 3;
+    rr(ctx, TX, TY, TW, TH, 5);
+    ctx.stroke();
+    // 노치 좌
+    ctx.beginPath();
+    ctx.arc(TX, BDG_CY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fill();
+    ctx.strokeStyle = '#e8a820';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // 노치 우
+    ctx.beginPath();
+    ctx.arc(TX + TW, BDG_CY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fill();
+    ctx.stroke();
+    // 점선 구분선 (티켓 내부)
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(232,168,32,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(TX + 14, BDG_CY);
+    ctx.lineTo(TX + TW - 14, BDG_CY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    /* ── 4. 흰 카드 영역 ── */
+    const CARD_TOP = BDG_CY + BDG_R + 18;
+    ctx.save();
+    rr(ctx, 20, CARD_TOP, W - 40, H - CARD_TOP - 20, 20);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+
+    /* ── 5. 좌석 정보 섹션 ── */
+    let Y = CARD_TOP + 38;
+
+    // "좌석 정보 / SEAT" 라벨
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `24px ${F}`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('좌석 정보 / SEAT', W / 2, Y);
+    ctx.restore();
+    Y += 16;
+
+    // 구역명 (대형)
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 86px ${F}`;
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fillText(SEC + ' 구역', W / 2, Y + 88);
+    ctx.restore();
+    Y += 108;
+
+    // 층 | 좌석번호
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 40px ${F}`;
+    ctx.fillStyle = '#374151';
+    ctx.fillText(FLOOR + '  |  ' + SEAT + '번 좌석', W / 2, Y + 46);
+    ctx.restore();
+    Y += 66;
+
+    // 위치 (핀 + 텍스트)
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `26px ${F}`;
+    ctx.fillStyle = '#6b7280';
+    const locStr  = '선교 70주년 기념관 대강당';
+    const locTxtW = ctx.measureText(locStr).width;
+    const locStartX = (W - locTxtW - 32) / 2;
+    // 핀 아이콘 (원 + 삼각형)
+    ctx.fillStyle = '#e8a820';
+    ctx.beginPath();
+    ctx.arc(locStartX + 11, Y + 3, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(locStartX + 11, Y + 14);
+    ctx.lineTo(locStartX + 5,  Y + 22);
+    ctx.lineTo(locStartX + 17, Y + 22);
+    ctx.closePath();
+    ctx.fill();
+    // 텍스트
+    ctx.fillStyle = '#6b7280';
+    ctx.textAlign = 'left';
+    ctx.fillText(locStr, locStartX + 28, Y + 16);
+    ctx.restore();
+    Y += 52;
+
+    // 구분선 + 골드 점
+    ctx.save();
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, Y + 10);
+    ctx.lineTo(W - 60, Y + 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(W / 2, Y + 10, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8a820';
+    ctx.fill();
+    ctx.restore();
+    Y += 30;
+
+    /* ── 6. 예매 정보 카드 ── */
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `24px ${F}`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('예매 정보', W / 2, Y + 20);
+    ctx.restore();
+    Y += 38;
+
+    const INFO_X = 38, INFO_W = W - 76;
+    const INFO_ROWS = [
+      { type: 'user',   label: '예매자',   value: UNAME + '  (' + POS + ')' },
+      { type: 'church', label: '출석교회', value: CHURCH },
+      { type: 'phone',  label: '연락처',   value: PHONE },
+      { type: 'clock',  label: '예매일시', value: RESAT },
+    ];
+    const ROW_H = 78, INFO_VP = 14;
+    const INFO_H = INFO_ROWS.length * ROW_H + INFO_VP * 2;
+
+    // 카드 배경 + 테두리
+    ctx.save();
+    rr(ctx, INFO_X, Y, INFO_W, INFO_H, 16);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    INFO_ROWS.forEach((row, i) => {
+      const RY   = Y + INFO_VP + i * ROW_H;
+      const MID  = RY + ROW_H / 2;
+      const ICX  = INFO_X + 50;
+
+      // 행 구분선
+      if (i > 0) {
+        ctx.save();
+        ctx.strokeStyle = '#f3f4f6';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(INFO_X + 18, RY);
+        ctx.lineTo(INFO_X + INFO_W - 18, RY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 아이콘 원 배경
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ICX, MID, 22, 0, Math.PI * 2);
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fill();
+      ctx.restore();
+
+      // 아이콘 그리기
+      drawMobileIcon(ctx, ICX, MID, row.type);
+
+      // 라벨 + 값
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.font = `22px ${F}`;
+      ctx.fillStyle = '#9ca3af';
+      ctx.fillText(row.label, INFO_X + 84, MID - 9);
+      ctx.font = `bold 27px ${F}`;
+      ctx.fillStyle = '#1f2937';
+      ctx.fillText(row.value, INFO_X + 84, MID + 22);
+      ctx.restore();
+    });
+    Y += INFO_H + 20;
+
+    /* ── 7. 내 좌석 카드 ── */
+    const SCRD_H = 174;
+    ctx.save();
+    rr(ctx, INFO_X, Y, INFO_W, SCRD_H, 16);
+    ctx.fillStyle = '#fffbeb';
+    ctx.fill();
+    ctx.strokeStyle = '#fde68a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `24px ${F}`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('내 좌석', W / 2, Y + 36);
+    ctx.font = `bold 48px ${F}`;
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fillText(FLOOR + '  |  ' + SEC + '-' + SEAT + '번', W / 2, Y + 100);
+    ctx.restore();
+
+    // 입금 상태 배지
+    let bTxt, bBg, bClr;
+    if (PAY === 'admin') {
+      bTxt = '✦  특별 초대장  ✦';
+      bBg  = 'rgba(251,191,36,0.22)';
+      bClr = '#92400e';
+    } else if (PAY === 'paid') {
+      bTxt = '✓  입금 완료';
+      bBg  = 'rgba(52,211,153,0.20)';
+      bClr = '#065f46';
+    } else {
+      bTxt = '◷  입금 대기';
+      bBg  = 'rgba(251,191,36,0.22)';
+      bClr = '#92400e';
+    }
+    const BDW = 260, BDH = 42;
+    ctx.save();
+    rr(ctx, (W - BDW) / 2, Y + 118, BDW, BDH, 21);
+    ctx.fillStyle = bBg;
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 25px ${F}`;
+    ctx.fillStyle = bClr;
+    ctx.fillText(bTxt, W / 2, Y + 148);
+    ctx.restore();
+    Y += SCRD_H + 22;
+
+    /* ── 8. 푸터 ── */
+    // 핀 아이콘
+    ctx.save();
+    ctx.fillStyle = '#e8a820';
+    ctx.beginPath();
+    ctx.arc(56, Y + 17, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(56, Y + 27);
+    ctx.lineTo(50, Y + 36);
+    ctx.lineTo(62, Y + 36);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 26px ${F}`;
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fillText('공연장', 80, Y + 19);
+    ctx.font = `24px ${F}`;
+    ctx.fillStyle = '#6b7280';
+    ctx.fillText('선교 70주년 기념관 대강당', 80, Y + 48);
+    ctx.restore();
+    Y += 70;
+
+    // 구분선
+    ctx.save();
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(38, Y);
+    ctx.lineTo(W - 38, Y);
+    ctx.stroke();
+    ctx.restore();
+    Y += 18;
+
+    // 주최 | 유효 안내
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 23px ${F}`;
+    ctx.fillStyle = '#374151';
+    ctx.textAlign = 'left';
+    ctx.fillText('주최  서중한합회 어린이부', 48, Y + 24);
+    ctx.font = `20px ${F}`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.textAlign = 'right';
+    ctx.fillText('이 티켓은 1회 유효합니다', W - 48, Y + 24);
+    ctx.restore();
+
+    /* ── 다운로드 ── */
+    const link = document.createElement('a');
+    link.download = 'ticket_mobile_' + CODE + '.jpg';
+    link.href = cv.toDataURL('image/jpeg', 0.97);
+    link.click();
+
+  } catch(e) {
+    alert('핸드폰용 저장 중 오류가 발생했습니다: ' + e.message);
+  } finally {
+    btn.classList.remove('btn-spin');
+    btn.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> 핸드폰용 저장';
+  }
+}
+</script>
+</body>
+</html>

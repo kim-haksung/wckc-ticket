@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전체 티켓 출력 - 예아단 특별공연</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+  background: #d1d9e6;
+  padding: 24px 16px 40px;
+}
+
+/* ── 상단 버튼 바 (화면 전용) ── */
+.ctrl-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 800px;
+  margin: 0 auto 20px;
+}
+.ctrl-bar-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+.ctrl-bar-title span {
+  background: #e8a820;
+  color: #0f2035;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  margin-left: 6px;
+}
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.cbtn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 20px;
+  border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+}
+.cbtn-print { background: #1e3a5f; color: #fff; }
+.cbtn-print:hover { background: #2c5282; }
+.cbtn-jpg   { background: #047857; color: #fff; }
+.cbtn-jpg:hover   { background: #065f46; }
+.cbtn-close { background: #6b7280; color: #fff; }
+.cbtn-close:hover { background: #4b5563; }
+.cbtn:disabled { opacity: .65; cursor: not-allowed; }
+
+/* ── A4 페이지 래퍼 ── */
+.page-wrapper {
+  width: 800px;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  padding: 24px 22px 28px;
+}
+
+/* ── 페이지 헤더 (인쇄 포함) ── */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 3px solid #1e3a5f;
+  margin-bottom: 18px;
+}
+.page-header-left h2 {
+  font-size: 18px;
+  color: #1e3a5f;
+  letter-spacing: 1px;
+}
+.page-header-left p {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 3px;
+}
+.page-header-right {
+  text-align: right;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.8;
+}
+.page-header-right strong { color: #1e3a5f; }
+
+/* ── 티켓 그리드 ── */
+.tickets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ── 미니 티켓 ── */
+.mini-ticket {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* 미니 헤더 */
+.mt-header {
+  background: linear-gradient(135deg, #0f2035 0%, #1e3a5f 100%);
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+.mt-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #e8a820, #f5c842, #e8a820);
+}
+.mt-event {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+.mt-badge {
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.mt-badge.paid   { background: #d1fae5; color: #065f46; }
+.mt-badge.unpaid { background: #fef3c7; color: #92400e; }
+
+/* 미니 바디 */
+.mt-body {
+  display: flex;
+  flex: 1;
+}
+.mt-seat {
+  flex: 1;
+  padding: 8px 12px;
+  border-right: 1.5px dashed #e5e7eb;
+}
+.mt-sec-big {
+  font-size: 22px;
+  font-weight: 900;
+  color: #1e3a5f;
+  line-height: 1;
+}
+.mt-seat-detail {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.mt-seat-sub {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 3px;
+}
+.mt-user {
+  font-size: 10.5px;
+  color: #374151;
+  margin-top: 5px;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 5px;
+  line-height: 1.7;
+}
+
+/* 스텁 (오른쪽) */
+.mt-stub {
+  width: 100px;
+  padding: 8px 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.mt-code {
+  font-size: 8px;
+  background: #1e3a5f;
+  color: #e8a820;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-align: center;
+  word-break: break-all;
+  width: 100%;
+  line-height: 1.5;
+  font-weight: 700;
+}
+.mt-barcode {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 30px;
+  width: 100%;
+  padding: 0 2px;
+}
+.mt-barcode-bar { flex: 1; background: #1e3a5f; border-radius: 1px; }
+.mt-seq {
+  font-size: 16px;
+  font-weight: 900;
+  color: #1e3a5f;
+}
+
+/* ── 페이지 푸터 ── */
+.page-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: #9ca3af;
+}
+
+/* ── 안내문 (화면 전용) ── */
+.notice-box {
+  max-width: 800px;
+  margin: 18px auto 0;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  padding: 13px 18px;
+  font-size: 12.5px;
+  color: #92400e;
+  line-height: 1.9;
+}
+.notice-box strong { color: #78350f; }
+
+/* ── 인쇄 스타일 ── */
+@media print {
+  body { background: #fff; padding: 0; }
+  .ctrl-bar, .notice-box { display: none !important; }
+  .page-wrapper {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 8mm 10mm;
+    width: 100%;
+  }
+  .mini-ticket { border-color: #ccc; }
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}
+</style>
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+
+<!-- 상단 컨트롤 바 -->
+<div class="ctrl-bar">
+  <div class="ctrl-bar-title">
+    <i class="fa-solid fa-ticket" style="color:#e8a820;margin-right:6px"></i>
+    전체 티켓 출력
+    <span>{{ total }}석</span>
+  </div>
+  <div class="btn-group">
+    <button class="cbtn cbtn-print" onclick="window.print()">
+      <i class="fa-solid fa-print"></i> PDF / 인쇄
+    </button>
+    <button class="cbtn cbtn-jpg" id="jpgBtn" onclick="downloadJpg()">
+      <i class="fa-solid fa-image"></i> JPG 저장
+    </button>
+    <button class="cbtn" id="mobileBtn" onclick="downloadMobile()"
+            style="background:#7c3aed;color:#fff">
+      <i class="fa-solid fa-mobile-screen"></i> 핸드폰용 저장
+    </button>
+    <button class="cbtn cbtn-close" onclick="window.close()">
+      <i class="fa-solid fa-xmark"></i> 닫기
+    </button>
+  </div>
+</div>
+
+<!-- A4 페이지 -->
+<div class="page-wrapper" id="pageWrapper">
+
+  <!-- 페이지 헤더 -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <h2><i class="fa-solid fa-music" style="color:#e8a820;margin-right:8px"></i>예아단 특별공연 &nbsp;입장권</h2>
+      <p>선교 70주년 기념관 대강당 &nbsp;|&nbsp; YEADAN SPECIAL CONCERT</p>
+    </div>
+    <div class="page-header-right">
+      <div><strong>예매자</strong>: {{ name }} ({{ position }})</div>
+      <div><strong>교회</strong>: {{ church }}</div>
+      <div><strong>연락처</strong>: {{ phone }}</div>
+      <div><strong>총 예매</strong>: {{ total }}석</div>
+    </div>
+  </div>
+
+  <!-- 티켓 그리드 -->
+  <div class="tickets-grid" id="ticketsGrid">
+    {% for t in tickets %}
+    <div class="mini-ticket">
+
+      <!-- 미니 헤더 -->
+      <div class="mt-header">
+        <span class="mt-event">
+          <i class="fa-solid fa-ticket" style="color:#e8a820;margin-right:4px"></i>
+          예아단 특별공연
+        </span>
+        {% if is_admin_ticket %}
+          <span class="mt-badge" style="background:#fef3c7;color:#92400e"><i class="fa-solid fa-star"></i> 특별초대장</span>
+        {% elif t.payment_status == 'paid' %}
+          <span class="mt-badge paid"><i class="fa-solid fa-circle-check"></i> 입금완료</span>
+        {% else %}
+          <span class="mt-badge unpaid"><i class="fa-solid fa-clock"></i> 입금대기</span>
+        {% endif %}
+      </div>
+
+      <!-- 미니 바디 -->
+      <div class="mt-body">
+        <!-- 좌석 정보 -->
+        <div class="mt-seat">
+          <div class="mt-sec-big">{{ t.section }} 구역</div>
+          <div class="mt-seat-detail">{{ t.floor_str }} &nbsp;|&nbsp; {{ t.seat_no }}번 좌석</div>
+          <div class="mt-seat-sub">
+            <i class="fa-solid fa-location-dot" style="color:#e8a820;margin-right:3px"></i>
+            선교 70주년 기념관 대강당
+          </div>
+          <div class="mt-user">
+            <div><i class="fa-solid fa-user" style="width:14px;color:#93b8d4"></i> {{ name }} ({{ position }})</div>
+            <div><i class="fa-solid fa-church" style="width:14px;color:#93b8d4"></i> {{ church }}</div>
+          </div>
+        </div>
+
+        <!-- 스텁 -->
+        <div class="mt-stub">
+          <div class="mt-code">{{ t.res_code }}</div>
+          <!-- 바코드 그래픽 -->
+          <div class="mt-barcode">
+            {% set bars = [8,4,12,3,7,10,2,5,9,6,11,3,8,4,12] %}
+            {% for h in bars %}
+              <div class="mt-barcode-bar" style="height:{{ h * 2 + 6 }}px"></div>
+            {% endfor %}
+          </div>
+          <div class="mt-seq" style="color:#1e3a5f;font-size:14px;font-weight:900">
+            {{ t.section }}-{{ t.seat_no }}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- 페이지 푸터 -->
+  <div class="page-footer">
+    <span>주최: 서중한합회 어린이부</span>
+    <span>공연장: 선교 70주년 기념관 대강당</span>
+    <span>이 티켓은 1회만 유효합니다</span>
+  </div>
+</div>
+
+<!-- 안내문 -->
+<div class="notice-box">
+  <strong><i class="fa-solid fa-circle-info" style="margin-right:6px"></i>출력 / 저장 안내</strong>
+  <strong>[PDF / 인쇄]</strong> 클릭 → 인쇄 화면에서 <strong>"PDF로 저장"</strong> 선택 시 PDF 파일로 저장됩니다.<br>
+  <strong>[JPG 저장]</strong> 클릭 → 전체 티켓이 하나의 JPG 이미지로 자동 다운로드됩니다.<br>
+  각 티켓의 <strong>개별 JPG 저장</strong>은 마이페이지 → 각 예매 카드의 [티켓 출력] 버튼을 이용해 주세요.
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+async function downloadJpg() {
+  const btn = document.getElementById('jpgBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 생성 중...';
+  try {
+    const el = document.getElementById('pageWrapper');
+    const canvas = await html2canvas(el, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight
+    });
+    const link = document.createElement('a');
+    link.download = '예아단특별공연_전체티켓.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.92);
+    link.click();
+  } catch(e) {
+    alert('JPG 저장 중 오류가 발생했습니다: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-image"></i> JPG 저장';
+  }
+}
+
+async function downloadMobile() {
+  const btn = document.getElementById('mobileBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 생성 중...';
+  try {
+    // 전체 티켓 페이지 캡처
+    const el = document.getElementById('pageWrapper');
+    const ticketCanvas = await html2canvas(el, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+      windowWidth: el.scrollWidth, windowHeight: el.scrollHeight
+    });
+
+    // 핸드폰 세로 캔버스 (1080 x 1920)
+    const PW = 1080, PH = 1920;
+    const phone = document.createElement('canvas');
+    phone.width  = PW;
+    phone.height = PH;
+    const ctx = phone.getContext('2d');
+
+    // 배경 그라디언트
+    const grad = ctx.createLinearGradient(0, 0, 0, PH);
+    grad.addColorStop(0,   '#0f2035');
+    grad.addColorStop(0.5, '#1e3a5f');
+    grad.addColorStop(1,   '#0f2035');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, PW, PH);
+
+    // 골드 라인
+    ctx.fillStyle = '#e8a820';
+    ctx.fillRect(0, 0, PW, 6);
+    ctx.fillRect(0, PH - 6, PW, 6);
+
+    // 상단 타이틀
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(0, 6, PW, 130);
+    ctx.font = 'bold 38px "Malgun Gothic", sans-serif';
+    ctx.fillStyle = '#e8a820';
+    ctx.textAlign = 'center';
+    ctx.fillText('예아단 특별공연 · 전체 티켓', PW / 2, 72);
+    ctx.font = '21px "Malgun Gothic", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('YEADAN SPECIAL CONCERT', PW / 2, 110);
+
+    // 티켓 이미지 스케일 및 배치
+    const PAD  = 40;
+    const topY = 155;
+    const maxW = PW - PAD * 2;
+    const maxH = PH - topY - 130;
+    const scale = Math.min(maxW / ticketCanvas.width, maxH / ticketCanvas.height);
+    const tw = ticketCanvas.width  * scale;
+    const th = ticketCanvas.height * scale;
+    const tx = (PW - tw) / 2;
+    const ty = topY + (maxH - th) / 2;
+
+    // 그림자
+    ctx.shadowColor   = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur    = 36;
+    ctx.shadowOffsetY = 8;
+    ctx.drawImage(ticketCanvas, tx, ty, tw, th);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur  = 0;
+
+    // 하단 안내
+    const footY = ty + th + 44;
+    ctx.font      = '21px "Malgun Gothic", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'center';
+    ctx.fillText('공연 당일 이 화면을 제시해 주세요', PW / 2, footY);
+    ctx.font      = '19px "Malgun Gothic", sans-serif';
+    ctx.fillStyle = 'rgba(232,168,32,0.7)';
+    ctx.fillText('주최: 서중한합회 어린이부', PW / 2, footY + 36);
+
+    const link = document.createElement('a');
+    link.download = '예아단특별공연_전체티켓_핸드폰용.jpg';
+    link.href = phone.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) {
+    alert('핸드폰용 저장 중 오류가 발생했습니다: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> 핸드폰용 저장';
+  }
+}
+</script>
+</body>
+</html>

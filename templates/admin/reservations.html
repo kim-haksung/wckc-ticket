@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>예매 관리 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+.badge-paid   { background:#d1fae5; color:#065f46; }
+.badge-unpaid { background:#fef3c7; color:#92400e; }
+.btn-pay      { background:#10B981; color:white; }
+.btn-pay:hover{ background:#0e9e6e; transform:translateY(-1px); }
+.btn-unpay    { background:#F59E0B; color:white; }
+.btn-unpay:hover{ background:#d97706; transform:translateY(-1px); }
+tr.paid-row td { background: #f0fdf4 !important; }
+/* 메모 셀 */
+.memo-cell { max-width: 180px; }
+.memo-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.5;
+  cursor: help;
+  word-break: break-all;
+}
+/* 입금완료 잠금 버튼 */
+.btn-locked {
+  background: #e5e7eb !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+  border: 1px dashed #d1d5db;
+}
+</style>
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+    <span style="font-size:11px;background:var(--accent);color:var(--primary-dark);padding:2px 8px;border-radius:6px;font-weight:700;margin-left:4px">관리자</span>
+  </div>
+  <div class="user-info">
+    <i class="fa-solid fa-user-shield" style="font-size:18px;opacity:.8"></i>
+    <span id="adminName"></span>
+    <button class="btn-logout" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+  </div>
+</header>
+
+<aside class="admin-nav">
+  <div class="nav-section">메뉴</div>
+  <a href="/admin/"><i class="fa-solid fa-chart-line"></i> <span>대시보드</span></a>
+  <a href="/admin/members"><i class="fa-solid fa-users"></i> <span>회원 관리</span></a>
+  <a href="/admin/reservations" class="active"><i class="fa-solid fa-ticket"></i> <span>예매 관리</span></a>
+  <a href="/admin/seats"><i class="fa-solid fa-map-location-dot"></i> <span>좌석 관리</span></a>
+</aside>
+
+<main class="admin-content">
+  <div class="page-header">
+    <div class="ph-icon"><i class="fa-solid fa-ticket"></i></div>
+    <div>
+      <h1>예매 현황 관리</h1>
+      <p>전체 예매 내역을 조회하고 취소·수정·삭제하며 입금 상태를 관리합니다.</p>
+    </div>
+  </div>
+
+  <div id="alertBox" class="alert"></div>
+
+  <!-- 필터 -->
+  <div class="filter-bar">
+    <div class="form-group">
+      <label><i class="fa-solid fa-magnifying-glass"></i> 검색 (이름/교회명/아이디)</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="이름, 교회명, 아이디">
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-circle-dot"></i> 예매 상태</label>
+      <select id="statusInput" class="form-control">
+        <option value="">전체</option>
+        <option value="confirmed">정상</option>
+        <option value="cancelled">취소</option>
+        <option value="admin_cancelled">관리자취소</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-won-sign"></i> 입금 상태</label>
+      <select id="paymentInput" class="form-control">
+        <option value="">전체</option>
+        <option value="paid">입금완료</option>
+        <option value="unpaid">입금대기</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-building"></i> 층</label>
+      <select id="floorInput" class="form-control">
+        <option value="">전체</option>
+        <option value="1">1층</option>
+        <option value="2">2층</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-grip"></i> 구역</label>
+      <select id="sectionInput" class="form-control">
+        <option value="">전체</option>
+        <option>가</option><option>나</option><option>다</option><option>라</option>
+        <option>마</option><option>사</option><option>아</option><option>자</option>
+        <option>차</option><option>카</option><option>타</option><option>바</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="loadRes(1)"><i class="fa-solid fa-magnifying-glass"></i> 검색</button>
+    <button class="btn btn-outline" onclick="resetFilter()"><i class="fa-solid fa-rotate-left"></i> 초기화</button>
+    <button class="btn btn-success" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> 엑셀</button>
+  </div>
+
+  <!-- 예매 목록 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fa-solid fa-table"></i> 예매 목록
+      <span id="totalCount" style="font-size:12.5px;font-weight:400;opacity:.8;margin-left:6px"></span>
+      <span style="margin-left:auto;display:flex;gap:14px;font-size:12px;font-weight:400;align-items:center">
+        <span><i class="fa-solid fa-square" style="color:#10B981;margin-right:4px"></i>초록 행 = 입금완료</span>
+        <span style="color:#9ca3af"><i class="fa-solid fa-lock" style="margin-right:4px"></i>입금완료 = 삭제 불가</span>
+      </span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>예매번호</th><th>성명</th><th>아이디</th>
+              <th>전화번호</th><th>출석교회</th><th>직분</th>
+              <th>층</th><th>구역</th><th>좌석</th>
+              <th>예매일시</th><th>예매상태</th>
+              <th>입금상태</th><th>입금일시</th>
+              <th>메모</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="resTable">
+            <tr><td colspan="15" class="loading">로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+</main>
+
+<!-- 예매 수정 모달 -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i class="fa-solid fa-pen-to-square"></i> 예매 수정</h3>
+      <button class="modal-close" onclick="closeEdit()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editResId">
+      <div class="form-group">
+        <label>예매 상태</label>
+        <select id="editStatus" class="form-control">
+          <option value="confirmed">정상</option>
+          <option value="cancelled">취소</option>
+          <option value="admin_cancelled">관리자취소</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>메모 (관리자)</label>
+        <textarea id="editMemo" class="form-control" rows="3" placeholder="관리자 메모"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeEdit()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-primary" onclick="saveEdit()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 삭제 확인 모달 -->
+<div class="modal-overlay" id="delModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header" style="background:linear-gradient(135deg,var(--danger),#dc2626)">
+      <h3><i class="fa-solid fa-trash"></i> 예매 삭제</h3>
+      <button class="modal-close" onclick="closeDel()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning show">
+        <i class="fa-solid fa-triangle-exclamation"></i> 예매 내역을 완전히 삭제합니다. 복구할 수 없습니다.
+      </div>
+      <p id="delInfo" style="font-size:13.5px;color:var(--gray);margin-top:10px"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDel()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-danger" id="delBtn" onclick="confirmDel()">
+        <i class="fa-solid fa-trash"></i> 삭제
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 입금확인 모달 -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header" id="payModalHeader" style="background:linear-gradient(135deg,#10B981,#0e9e6e)">
+      <h3 id="payModalTitle"><i class="fa-solid fa-won-sign"></i> 입금 확인</h3>
+      <button class="modal-close" onclick="closePay()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p id="payInfo" style="font-size:14px;color:var(--dark);margin-bottom:16px"></p>
+      <div class="alert alert-info show" id="payConfirmMsg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closePay()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn" id="payConfirmBtn" onclick="confirmPay()">확인</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let delTargetId = null;
+let payTargetId = null;
+let payTargetAction = null;
+
+const STATUS_MAP = {
+  confirmed:       '<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> 정상</span>',
+  cancelled:       '<span class="badge badge-danger"><i class="fa-solid fa-circle-xmark"></i> 취소</span>',
+  admin_cancelled: '<span class="badge badge-danger"><i class="fa-solid fa-circle-xmark"></i> 관리자취소</span>'
+};
+
+(async () => {
+  const me = await fetch('/api/me').then(r => r.json());
+  if (!me.logged_in || me.role !== 'admin') { location.href = '/'; return; }
+  document.getElementById('adminName').textContent = me.name + ' 관리자';
+  loadRes(1);
+})();
+
+async function loadRes(page = 1) {
+  currentPage = page;
+  const search  = document.getElementById('searchInput').value;
+  const status  = document.getElementById('statusInput').value;
+  const payment = document.getElementById('paymentInput').value;
+  const floor   = document.getElementById('floorInput').value;
+  const section = document.getElementById('sectionInput').value;
+
+  const params = new URLSearchParams({ search, status, floor, section, page });
+  const res  = await fetch(`/api/admin/reservations?${params}`);
+  const data = await res.json();
+
+  // 클라이언트 사이드 입금 필터
+  let list = data.reservations;
+  if (payment === 'paid')   list = list.filter(r => r.payment_status === 'paid');
+  if (payment === 'unpaid') list = list.filter(r => r.payment_status !== 'paid' && r.status === 'confirmed');
+
+  document.getElementById('totalCount').textContent = `(총 ${data.total}건 / 표시 ${list.length}건)`;
+  const tbody = document.getElementById('resTable');
+
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;color:var(--gray);padding:48px">예매 내역이 없습니다.</td></tr>';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = list.map(r => {
+    const isPaid = r.payment_status === 'paid';
+    const isConfirmed = r.status === 'confirmed';
+    const payBadge = isPaid
+      ? '<span class="badge badge-paid"><i class="fa-solid fa-circle-check"></i> 입금완료</span>'
+      : (isConfirmed ? '<span class="badge badge-unpaid"><i class="fa-solid fa-clock"></i> 입금대기</span>' : '<span style="color:var(--gray);font-size:12px">-</span>');
+
+    const payBtn = isConfirmed
+      ? (isPaid
+          ? `<button class="btn btn-unpay btn-sm" title="입금취소" onclick="openPay(${r.id},'cancel','${r.name}','${r.section}','${r.seat_no}')"><i class="fa-solid fa-rotate-left"></i></button>`
+          : `<button class="btn btn-pay btn-sm" title="입금완료 등록" onclick="openPay(${r.id},'pay','${r.name}','${r.section}','${r.seat_no}')"><i class="fa-solid fa-won-sign"></i></button>`)
+      : '';
+
+    return `
+    <tr class="${isPaid ? 'paid-row' : ''}">
+      <td style="font-size:11.5px;color:var(--gray)">${r.res_code}</td>
+      <td><strong>${r.name}</strong></td>
+      <td style="color:var(--primary)">${r.username}</td>
+      <td>${r.phone}</td>
+      <td>${r.church}</td>
+      <td>${r.position}</td>
+      <td>${r.floor}층</td>
+      <td>${r.section} 구역</td>
+      <td><strong>${r.seat_no}번</strong></td>
+      <td style="font-size:12px;color:var(--gray)">${r.reserved_at ? r.reserved_at.substring(0,16) : '-'}</td>
+      <td>${STATUS_MAP[r.status] || r.status}</td>
+      <td>${payBadge}</td>
+      <td style="font-size:11.5px;color:var(--gray)">${r.payment_at ? r.payment_at.substring(0,16) : '-'}</td>
+      <td class="memo-cell">${r.memo ? `<span class="memo-text" title="${r.memo.replace(/"/g,'&quot;')}"><i class="fa-solid fa-note-sticky" style="color:#e8a820;margin-right:4px"></i>${r.memo}</span>` : '<span style="color:#d1d5db">-</span>'}</td>
+      <td style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
+        ${payBtn}
+        <button class="btn btn-primary btn-sm" title="예매수정" onclick='openEdit(${r.id},"${r.status}","${(r.memo||'').replace(/"/g,"&quot;")}") '>
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        ${isPaid
+          ? `<button class="btn btn-sm btn-locked"
+                     title="입금완료 티켓은 삭제할 수 없습니다" disabled>
+               <i class="fa-solid fa-lock"></i>
+             </button>`
+          : `<button class="btn btn-danger btn-sm" title="삭제"
+                     onclick="openDel(${r.id},'${r.res_code}')">
+               <i class="fa-solid fa-trash"></i>
+             </button>`
+        }
+      </td>
+    </tr>`;
+  }).join('');
+
+  const totalPages = Math.ceil(data.total / 30);
+  let pHtml = '';
+  if (page > 1) pHtml += `<button class="page-btn" onclick="loadRes(${page-1})"><i class="fa-solid fa-chevron-left"></i></button>`;
+  for (let i = Math.max(1,page-2); i <= Math.min(totalPages,page+2); i++) {
+    pHtml += `<button class="page-btn ${i===page?'active':''}" onclick="loadRes(${i})">${i}</button>`;
+  }
+  if (page < totalPages) pHtml += `<button class="page-btn" onclick="loadRes(${page+1})"><i class="fa-solid fa-chevron-right"></i></button>`;
+  document.getElementById('pagination').innerHTML = pHtml;
+}
+
+/* ── 입금 처리 ── */
+function openPay(id, action, name, section, seatNo) {
+  payTargetId     = id;
+  payTargetAction = action;
+  const isPay = action === 'pay';
+  const header = document.getElementById('payModalHeader');
+  const title  = document.getElementById('payModalTitle');
+  const btn    = document.getElementById('payConfirmBtn');
+
+  header.style.background = isPay
+    ? 'linear-gradient(135deg,#10B981,#0e9e6e)'
+    : 'linear-gradient(135deg,#F59E0B,#d97706)';
+  title.innerHTML  = isPay
+    ? '<i class="fa-solid fa-won-sign"></i> 입금 완료 등록'
+    : '<i class="fa-solid fa-rotate-left"></i> 입금 취소';
+  document.getElementById('payInfo').innerHTML =
+    `<i class="fa-solid fa-user" style="color:var(--primary);margin-right:6px"></i>
+     <strong>${name}</strong> 님의 <strong>${section} 구역 ${seatNo}번</strong> 좌석`;
+  document.getElementById('payConfirmMsg').innerHTML = isPay
+    ? '<i class="fa-solid fa-circle-info"></i> 입금이 확인되었음을 등록합니다.'
+    : '<i class="fa-solid fa-triangle-exclamation"></i> 입금 완료 상태를 취소(입금대기)로 되돌립니다.';
+  document.getElementById('payConfirmMsg').className = isPay ? 'alert alert-info show' : 'alert alert-warning show';
+  btn.className = isPay ? 'btn btn-pay' : 'btn btn-unpay';
+  btn.innerHTML = isPay
+    ? '<i class="fa-solid fa-check"></i> 입금완료 등록'
+    : '<i class="fa-solid fa-rotate-left"></i> 입금취소';
+  document.getElementById('payModal').classList.add('show');
+}
+function closePay() { document.getElementById('payModal').classList.remove('show'); payTargetId = null; }
+
+async function confirmPay() {
+  if (!payTargetId) return;
+  const btn = document.getElementById('payConfirmBtn');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+
+  const res = await fetch(`/api/admin/reservations/${payTargetId}/payment`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ action: payTargetAction })
+  });
+  btn.disabled = false; btn.innerHTML = orig;
+  closePay();
+
+  if (res.ok) {
+    const msg = payTargetAction === 'pay' ? '입금완료로 등록했습니다.' : '입금 상태를 취소했습니다.';
+    showAlert(msg, 'success');
+    loadRes(currentPage);
+  } else {
+    showAlert('오류가 발생했습니다.', 'danger');
+  }
+}
+
+/* ── 예매 수정 ── */
+function openEdit(id, status, memo) {
+  document.getElementById('editResId').value  = id;
+  document.getElementById('editStatus').value = status;
+  document.getElementById('editMemo').value   = memo;
+  document.getElementById('editModal').classList.add('show');
+}
+function closeEdit() { document.getElementById('editModal').classList.remove('show'); }
+
+async function saveEdit() {
+  const id = document.getElementById('editResId').value;
+  const res = await fetch(`/api/admin/reservations/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      status: document.getElementById('editStatus').value,
+      memo:   document.getElementById('editMemo').value,
+    })
+  });
+  closeEdit();
+  if (res.ok) { showAlert('수정되었습니다.', 'success'); loadRes(currentPage); }
+  else        { showAlert('오류가 발생했습니다.', 'danger'); }
+}
+
+/* ── 삭제 ── */
+function openDel(id, code) {
+  delTargetId = id;
+  document.getElementById('delInfo').innerHTML =
+    `<i class="fa-solid fa-receipt" style="color:var(--primary);margin-right:6px"></i>예매번호: <strong>${code}</strong>`;
+  document.getElementById('delModal').classList.add('show');
+}
+function closeDel() { document.getElementById('delModal').classList.remove('show'); delTargetId = null; }
+
+async function confirmDel() {
+  if (!delTargetId) return;
+  const btn = document.getElementById('delBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+  const res = await fetch(`/api/admin/reservations/${delTargetId}`, { method: 'DELETE' });
+  btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-trash"></i> 삭제';
+  closeDel();
+  if (res.ok) { showAlert('삭제되었습니다.', 'success'); loadRes(currentPage); }
+  else        { showAlert('오류가 발생했습니다.', 'danger'); }
+}
+
+/* ── 공통 ── */
+function resetFilter() {
+  ['searchInput','statusInput','paymentInput','floorInput','sectionInput'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  loadRes(1);
+}
+
+function exportExcel() { window.location.href = '/api/admin/export'; }
+
+function showAlert(msg, type) {
+  const al = document.getElementById('alertBox');
+  al.innerHTML = `<i class="fa-solid fa-${type==='success'?'circle-check':'circle-exclamation'}"></i> ` + msg;
+  al.className = `alert alert-${type} show`;
+  setTimeout(() => al.classList.remove('show'), 4000);
+}
+
+async function doLogout() { await fetch('/api/logout',{method:'POST'}); location.href='/'; }
+</script>
+</body>
+</html>

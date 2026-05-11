@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>좌석 예매 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-house"></i> 홈</a>
+    <a href="/booking" class="active"><i class="fa-solid fa-couch"></i> 좌석 예매</a>
+    <a href="/mypage"><i class="fa-solid fa-user"></i> 마이페이지</a>
+  </nav>
+  <div class="user-info">
+    <i class="fa-solid fa-circle-user" style="font-size:18px;opacity:.8"></i>
+    <span id="userName">로딩중...</span>님
+    <button class="btn-logout" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-header" style="align-items:flex-start">
+    <div class="ph-icon" style="margin-top:2px"><i class="fa-solid fa-couch"></i></div>
+    <div>
+      <h1>좌석 선택</h1>
+      <p>원하는 층을 선택 후 빈 좌석을 클릭하여 예매하세요.</p>
+      <div style="display:inline-flex;align-items:center;gap:8px;
+                  margin-top:6px;padding:8px 18px;
+                  background:linear-gradient(135deg,#b45309,#d97706);
+                  border-radius:8px;box-shadow:0 2px 8px rgba(180,83,9,.35)">
+        <i class="fa-solid fa-triangle-exclamation" style="color:#fef3c7;font-size:15px"></i>
+        <span style="color:#fff;font-size:14px;font-weight:700;letter-spacing:.3px">
+          1인 최대 <span style="font-size:18px;color:#fef08a">10석</span>까지 예매 가능합니다.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div id="bookingAlert" class="alert"></div>
+
+  <div class="booking-layout">
+    <!-- 좌측: 타이머 + 층탭 + 좌석 배치도 -->
+    <div>
+      <!-- ★ 3분 타이머 바 (큐 활성 세션 남은 시간) ★ -->
+      <div id="queueTimerBar" class="queue-timer-bar" style="display:none">
+        <i class="fa-solid fa-stopwatch" style="color:#60a5fa;font-size:16px"></i>
+        <span class="qtb-label">예매 가능 시간</span>
+        <span class="qtb-time" id="qtbTime">3:00</span>
+        <div class="qtb-progress">
+          <div class="qtb-progress-bar" id="qtbProgressBar" style="width:100%"></div>
+        </div>
+        <span style="color:#bfdbfe;font-size:12px;white-space:nowrap">남은 시간</span>
+      </div>
+
+      <!-- 층 탭 -->
+      <div class="floor-tabs" style="margin-top:12px">
+        <button class="floor-tab active" onclick="switchFloor(1, this)">
+          <span class="floor-num">1층</span><span class="floor-sub"> (가~라 구역)</span>
+        </button>
+        <button class="floor-tab" onclick="switchFloor(2, this)">
+          <span class="floor-num">2층</span><span class="floor-sub"> (마~타 구역)</span>
+        </button>
+      </div>
+
+      <div class="seat-map-container" style="margin-top:0;border-radius:0 0 var(--radius) var(--radius)">
+        <div class="stage-label" id="stageLabel">
+          <i class="fa-solid fa-star" style="color:var(--accent);margin-right:8px"></i>
+          S T A G E
+          <i class="fa-solid fa-star" style="color:var(--accent);margin-left:8px"></i>
+        </div>
+        <!-- 범례 -->
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot legend-available"></div> 예매 가능</div>
+          <div class="legend-item"><div class="legend-dot legend-selected"></div> 선택 중</div>
+          <div class="legend-item"><div class="legend-dot legend-reserved"></div> 예매 완료</div>
+          <div class="legend-item"><div class="legend-dot legend-mine"></div> 내 좌석</div>
+          <div class="legend-item"><div class="legend-dot legend-locked"></div> 다른분 선택 중</div>
+          <div class="legend-item"><div class="legend-dot legend-blocked" style="display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:bold;">×</div> 예매 불가</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#e8edf2;border:1px solid #b0bec5"></div> ♿ 장애인석</div>
+        </div>
+        <div style="overflow-x:auto">
+          <svg id="seatMapSvg"></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 사이드바 -->
+    <div class="booking-sidebar">
+      <div class="selected-info">
+        <div class="si-header">
+          <i class="fa-solid fa-list-check"></i>
+          선택 중 (<span id="selectedCount">0</span> / <span id="effectiveMaxDisplay">10</span>석 추가 가능)
+        </div>
+        <!-- 기존 예매 현황 (기존 예매가 있을 때만 표시) -->
+        <div id="reservedInfoBar" style="display:none;padding:8px 16px 6px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;font-size:12.5px;color:#4b5563;line-height:1.8">
+          <span><i class="fa-solid fa-couch" style="color:var(--primary);margin-right:4px"></i>기존 예매: <strong id="reservedCountDisplay" style="color:var(--primary)">0</strong>석</span>
+          &nbsp;|&nbsp;
+          <span>추가 가능: <strong id="remainDisplay" style="color:var(--success)">10</strong>석</span>
+          &nbsp;|&nbsp;
+          <span>최대: <strong>10</strong>석</span>
+        </div>
+        <!-- 최대 초과 경고 -->
+        <div id="maxReachedBar" style="display:none;padding:7px 16px;background:#fef3c7;border-bottom:1px solid #fcd34d;font-size:12.5px;color:#92400e">
+          <i class="fa-solid fa-triangle-exclamation" style="margin-right:4px"></i>
+          최대 10석을 모두 예매하셨습니다.
+        </div>
+        <div class="si-body">
+          <ul class="selected-list" id="selectedList">
+            <li style="color:var(--gray);text-align:center;padding:20px 0;font-size:13.5px;display:block">
+              <i class="fa-solid fa-hand-pointer" style="display:block;font-size:24px;margin-bottom:8px;opacity:.4"></i>
+              좌석을 선택해주세요
+            </li>
+          </ul>
+        </div>
+        <!-- 총 결제 금액 -->
+        <div id="totalPriceBar" style="display:none;padding:10px 16px;
+             background:#fffbeb;border-top:1px solid #fcd34d;border-bottom:1px solid #fcd34d">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:13px;color:#78350f">
+              <i class="fa-solid fa-won-sign" style="margin-right:5px;color:#d97706"></i>총 결제 금액
+            </span>
+            <strong id="totalPriceAmount"
+                    style="font-size:18px;color:#92400e;letter-spacing:-0.5px">0원</strong>
+          </div>
+          <div style="font-size:11.5px;color:#b45309;margin-top:3px;text-align:right">
+            <span id="totalPriceDetail"></span>
+          </div>
+        </div>
+        <div class="si-footer">
+          <button id="bookBtn" class="btn btn-secondary btn-lg" style="width:100%;justify-content:center"
+                  onclick="doBook()" disabled>
+            <i class="fa-solid fa-ticket"></i> 예매하기
+          </button>
+          <button class="btn btn-outline" style="width:100%;margin-top:10px;justify-content:center"
+                  onclick="SeatMap.clearSelected()">
+            <i class="fa-solid fa-rotate-left"></i> 선택 초기화
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><i class="fa-solid fa-circle-info"></i> 예매 안내</div>
+        <div class="card-body" style="font-size:13px;line-height:2;color:var(--gray)">
+          <div><i class="fa-solid fa-check" style="color:var(--success);margin-right:6px"></i>1인 최대 <strong style="color:var(--primary)">10석</strong> 예매 가능 (기존+추가 합산)</div>
+          <div><i class="fa-solid fa-circle" style="color:#94a3b8;margin-right:6px;font-size:10px"></i>회색 좌석: 예매 완료</div>
+          <div><i class="fa-solid fa-circle" style="color:var(--success);margin-right:6px;font-size:10px"></i>초록 좌석: 내가 예매한 좌석</div>
+          <div><i class="fa-solid fa-check" style="color:var(--success);margin-right:6px"></i>예매 취소: 마이페이지에서 가능</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ★ 좌석 초과 안내 모달 ★ -->
+<div class="modal-overlay" id="limitModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header" style="background:linear-gradient(135deg,#b45309,#d97706)">
+      <h3><i class="fa-solid fa-triangle-exclamation"></i> 예매 좌석 초과</h3>
+    </div>
+    <div class="modal-body" style="padding:28px 28px 20px;text-align:center">
+      <!-- 아이콘 -->
+      <div style="font-size:52px;margin-bottom:16px">🚫</div>
+      <!-- 메인 메시지 -->
+      <p id="limitMainMsg"
+         style="font-size:16px;font-weight:700;color:#1e3a5f;margin-bottom:12px;line-height:1.6"></p>
+      <!-- 상세 현황 박스 -->
+      <div id="limitDetailBox"
+           style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;
+                  padding:14px 18px;margin-bottom:16px;font-size:13.5px;
+                  color:#374151;line-height:2.2;text-align:left">
+        <div><i class="fa-solid fa-couch" style="color:var(--primary);width:20px"></i>
+          기존 예매: <strong id="limitReserved" style="color:var(--primary)">-</strong>석
+        </div>
+        <div><i class="fa-solid fa-plus" style="color:var(--success);width:20px"></i>
+          추가 가능: <strong id="limitRemain" style="color:var(--success)">-</strong>석
+        </div>
+        <div style="border-top:1px dashed #e2e8f0;margin-top:6px;padding-top:6px">
+          <i class="fa-solid fa-equals" style="color:var(--accent);width:20px"></i>
+          최대 합계: <strong style="color:var(--accent)">10석</strong>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:#6b7280">
+        마이페이지에서 기존 예매를 취소하시면 추가 예매가 가능합니다.
+      </p>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:20px">
+      <button class="btn btn-secondary" onclick="closeLimitModal()"
+              style="min-width:120px;justify-content:center">
+        <i class="fa-solid fa-circle-check"></i> 확인
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 예매 확인 모달 -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i class="fa-solid fa-ticket"></i> 예매 확인</h3>
+      <button class="modal-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info show" style="margin-bottom:16px">
+        <i class="fa-solid fa-circle-info"></i> 선택하신 좌석을 예매하시겠습니까?
+      </div>
+      <table style="width:100%;font-size:13.5px">
+        <thead>
+          <tr>
+            <th style="padding:10px 14px">구역</th>
+            <th style="padding:10px 14px">좌석번호</th>
+          </tr>
+        </thead>
+        <tbody id="confirmList"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-secondary" id="confirmBtn" onclick="confirmBook()">
+        <i class="fa-solid fa-check"></i> 예매 확정
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ★ 예매 시간 만료 모달 ★ -->
+<div class="modal-overlay" id="timerExpiredModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)">
+      <h3><i class="fa-solid fa-stopwatch"></i> 예매 시간 만료</h3>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:32px 28px 20px">
+      <div style="font-size:52px;margin-bottom:16px">⏰</div>
+      <p style="font-size:16px;font-weight:700;color:#1e3a5f;margin-bottom:12px;line-height:1.7">
+        예매 가능 시간 3분이 초과되었습니다.
+      </p>
+      <p style="font-size:13px;color:#6b7280">
+        선택하신 좌석이 해제되었습니다.<br>
+        대기열로 돌아가 다시 입장해 주세요.
+      </p>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:20px">
+      <button class="btn btn-secondary" onclick="location.href='/queue'"
+              style="min-width:140px;justify-content:center">
+        <i class="fa-solid fa-arrow-left"></i> 대기열로 돌아가기
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 동시 예매 충돌 안내 모달 -->
+<div class="modal-overlay" id="conflictModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header" style="background:linear-gradient(135deg,#b45309,#d97706)">
+      <h3><i class="fa-solid fa-triangle-exclamation"></i> 예매 불가</h3>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:32px 28px 20px">
+      <div style="font-size:52px;margin-bottom:16px">😓</div>
+      <p style="font-size:16px;font-weight:700;color:#1e3a5f;margin-bottom:12px;line-height:1.7">
+        선택한 좌석은 이미 다른 사람이<br>예매 중입니다.
+      </p>
+      <p style="font-size:13px;color:#6b7280">
+        좌석 선택 화면으로 돌아가서<br>다른 좌석을 선택해 주세요.
+      </p>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:20px">
+      <button class="btn btn-secondary" onclick="closeConflictModal()"
+              style="min-width:120px;justify-content:center">
+        <i class="fa-solid fa-couch"></i> 확인
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 완료 모달 -->
+<div class="modal-overlay" id="doneModal">
+  <div class="modal">
+    <div class="modal-header" style="background:linear-gradient(135deg,var(--success),#0e9e6e)">
+      <h3><i class="fa-solid fa-circle-check"></i> 예매 완료</h3>
+      <button class="modal-close" onclick="closeDone()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:36px 24px">
+      <div style="font-size:56px;margin-bottom:16px">🎉</div>
+      <h2 style="color:var(--success);margin-bottom:8px;font-size:22px">예매가 완료되었습니다!</h2>
+      <p style="color:var(--gray);margin-bottom:24px;font-size:14px" id="doneMsg"></p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <a href="/mypage" class="btn btn-primary">
+          <i class="fa-solid fa-user"></i> 마이페이지에서 확인
+        </a>
+        <button class="btn btn-outline" onclick="closeDone()">
+          <i class="fa-solid fa-plus"></i> 계속 예매
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/seatmap.js"></script>
+<script>
+const TOKEN_KEY     = 'queue_token';
+let   queueToken    = localStorage.getItem(TOKEN_KEY) || '';
+let   currentFloor  = 1;
+let   me            = null;
+let   heartbeatTimer = null;
+let   timerInterval  = null;
+let   remainingSecs  = 180;  // 3분
+
+/* ── 큐 타이머 UI ─────────────────────────────── */
+const TIMER_END_KEY = 'queue_timer_end';  // sessionStorage 키
+
+function startQueueTimer(secs) {
+  // 서버에서 받은 남은 시간과 저장된 종료 시각 중 더 정확한 값 사용
+  const savedEnd = sessionStorage.getItem(TIMER_END_KEY);
+  if (savedEnd) {
+    const secFromSaved = Math.round((parseInt(savedEnd) - Date.now()) / 1000);
+    // 저장값이 유효하면 서버값 대신 사용 (새로고침 복원)
+    if (secFromSaved > 0 && secFromSaved <= 180) {
+      secs = secFromSaved;
+    }
+  }
+  // 새 타이머 종료 시각 저장
+  sessionStorage.setItem(TIMER_END_KEY, Date.now() + secs * 1000);
+
+  remainingSecs = secs;
+  const bar = document.getElementById('queueTimerBar');
+  if (bar) bar.style.display = 'flex';
+  updateTimerUI();
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    remainingSecs--;
+    updateTimerUI();
+    if (remainingSecs <= 0) {
+      clearInterval(timerInterval);
+      sessionStorage.removeItem(TIMER_END_KEY);
+      onTimerExpired();
+    }
+  }, 1000);
+}
+
+function updateTimerUI() {
+  const m = Math.floor(remainingSecs / 60);
+  const s = remainingSecs % 60;
+  const str = m + ':' + String(s).padStart(2, '0');
+  const el  = document.getElementById('qtbTime');
+  const bar = document.getElementById('qtbProgressBar');
+  if (el) {
+    el.textContent = str;
+    el.className   = 'qtb-time' +
+      (remainingSecs <= 60 ? ' danger' : remainingSecs <= 120 ? ' warning' : '');
+  }
+  if (bar) bar.style.width = Math.max(0, (remainingSecs / 180) * 100) + '%';
+}
+
+function onTimerExpired() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  sendQueueLeave();   // 슬롯 반환
+  // 좌석 선점 해제
+  SeatMap.clearSelected();
+  // 안내 모달
+  document.getElementById('timerExpiredModal').classList.add('show');
+}
+
+/* ── 하트비트 ─────────────────────────────────── */
+async function sendHeartbeat() {
+  if (!queueToken) return;
+  try {
+    const res  = await fetch('/api/queue/heartbeat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token: queueToken })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      // 서버에서 만료됨 → 처리
+      onTimerExpired();
+    } else if (data.remaining !== undefined) {
+      remainingSecs = data.remaining;
+    }
+  } catch (e) { /* 네트워크 오류 무시 */ }
+}
+
+/* ── 명시적 이탈 시에만 큐 퇴장 ─────────────────
+   F5/새로고침은 beforeunload를 통해 세션을 제거하지 않음.
+   heartbeat 90초 타임아웃으로 자연 만료되거나,
+   doLogout / 홈·마이페이지 링크 클릭 시에만 명시적 퇴장.
+─────────────────────────────────────────────── */
+function sendQueueLeave() {
+  if (!queueToken) return;
+  navigator.sendBeacon('/api/queue/leave',
+    new Blob([JSON.stringify({ token: queueToken })], { type: 'application/json' }));
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TIMER_END_KEY);
+  queueToken = '';
+}
+
+// 예매 페이지를 벗어나는 링크에만 퇴장 처리 (F5/새로고침 제외)
+document.querySelectorAll('a[href]').forEach(a => {
+  a.addEventListener('click', () => sendQueueLeave());
+});
+
+// 좌석 로드 완료 시 잔여 예매 현황 UI 업데이트
+SeatMap.onLoad(({ reservedCount, effectiveMax, maxSeats }) => {
+  const isAdmin = effectiveMax === Infinity;
+  document.getElementById('effectiveMaxDisplay').textContent = isAdmin ? '무제한' : effectiveMax;
+
+  const infoBar      = document.getElementById('reservedInfoBar');
+  const maxBar       = document.getElementById('maxReachedBar');
+  const remainEl     = document.getElementById('remainDisplay');
+  const reservedEl   = document.getElementById('reservedCountDisplay');
+
+  if (isAdmin) {
+    // 관리자: 현황 바 숨김
+    infoBar.style.display = 'none';
+    maxBar.style.display  = 'none';
+  } else if (effectiveMax <= 0) {
+    // 이미 10석 모두 예매한 경우
+    infoBar.style.display = 'none';
+    maxBar.style.display  = 'block';
+  } else if (reservedCount > 0) {
+    // 기존 예매가 있을 때만 현황 바 표시
+    infoBar.style.display = 'block';
+    maxBar.style.display  = 'none';
+    reservedEl.textContent = reservedCount;
+    remainEl.textContent   = effectiveMax;
+  } else {
+    infoBar.style.display = 'none';
+    maxBar.style.display  = 'none';
+  }
+});
+
+(async () => {
+  me = await fetch('/api/me').then(r => r.json());
+  if (!me.logged_in) { location.href = '/login'; return; }
+  document.getElementById('userName').textContent = me.name;
+
+  // ── 큐 게이트: 관리자는 통과, 일반 사용자는 토큰 검증 ──
+  if (!me.is_admin) {
+    if (!queueToken) {
+      location.href = '/queue'; return;
+    }
+    const qRes  = await fetch(`/api/queue/status?token=${encodeURIComponent(queueToken)}`);
+    const qData = await qRes.json();
+    if (qData.status !== 'active') {
+      location.href = '/queue'; return;
+    }
+    // 타이머 시작 + 하트비트
+    startQueueTimer(qData.remaining ?? 300);
+    sendHeartbeat();
+    heartbeatTimer = setInterval(sendHeartbeat, 30000);
+    // seatmap에 토큰 전달
+    SeatMap.setToken(queueToken);
+  }
+
+  SeatMap.load(1, 'seatMapSvg');
+})();
+
+function switchFloor(floor, btn) {
+  currentFloor = floor;
+  document.querySelectorAll('.floor-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('stageLabel').style.display = floor === 1 ? 'block' : 'none';
+  SeatMap.clearSelected();
+  SeatMap.load(floor, 'seatMapSvg');
+}
+
+function doBook() {
+  const sel = SeatMap.getSelected();
+  if (!sel.length) return;
+  const tbody = document.getElementById('confirmList');
+  tbody.innerHTML = '';
+  sel.forEach(id => {
+    const el = document.querySelector(`[data-id="${id}"]`);
+    const sec = el ? el.getAttribute('data-sec') : '-';
+    const no  = el ? el.getAttribute('data-no')  : id;
+    const tr  = document.createElement('tr');
+    tr.innerHTML = `<td style="padding:10px 14px;border-bottom:1px solid var(--gray-mid)">${sec} 구역</td>
+                    <td style="padding:10px 14px;border-bottom:1px solid var(--gray-mid)"><strong>${no}번</strong></td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function closeModal() { document.getElementById('confirmModal').classList.remove('show'); }
+
+async function confirmBook() {
+  const sel = SeatMap.getSelected();
+  const btn = document.getElementById('confirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+
+  const res = await fetch('/api/reservations', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ seat_ids: sel, queue_token: queueToken })
+  });
+  const data = await res.json();
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-check"></i> 예매 확정';
+  closeModal();
+
+  if (res.ok) {
+    document.getElementById('doneMsg').textContent = data.message;
+    document.getElementById('doneModal').classList.add('show');
+    SeatMap.clearSelected();
+    SeatMap.load(currentFloor, 'seatMapSvg');
+  } else if (res.status === 503) {
+    // 동시 예매 충돌 → 전용 모달 표시 후 좌석 지도 새로고침
+    document.getElementById('conflictModal').classList.add('show');
+  } else {
+    const al = document.getElementById('bookingAlert');
+    al.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + data.error;
+    al.className = 'alert alert-danger show';
+    setTimeout(() => al.classList.remove('show'), 4000);
+  }
+}
+
+function closeDone() { document.getElementById('doneModal').classList.remove('show'); }
+
+function closeConflictModal() {
+  document.getElementById('conflictModal').classList.remove('show');
+  SeatMap.clearSelected();
+  SeatMap.load(currentFloor, 'seatMapSvg');  // 좌석 지도 새로고침
+}
+
+// ── 좌석 초과 모달 ──────────────────────────────────
+function closeLimitModal() {
+  document.getElementById('limitModal').classList.remove('show');
+}
+
+/**
+ * seatmap.js에서 호출하는 전역 함수
+ * @param {string} mainMsg  - 상단 메시지
+ * @param {number} reserved - 기존 예매 수
+ * @param {number} remain   - 추가 가능 수
+ */
+window.showSeatLimitModal = function(mainMsg, reserved, remain) {
+  document.getElementById('limitMainMsg').textContent  = mainMsg;
+  document.getElementById('limitReserved').textContent = reserved;
+  document.getElementById('limitRemain').textContent   = remain;
+  document.getElementById('limitModal').classList.add('show');
+};
+
+async function doLogout() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (timerInterval)  clearInterval(timerInterval);
+  sendQueueLeave();   // 큐 퇴장 (beacon)
+  await fetch('/api/logout', {method:'POST'});
+  location.href = '/';
+}
+</script>
+</body>
+</html>

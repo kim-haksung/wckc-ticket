@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>입장 대기 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+  </div>
+  <nav>
+    <a href="/"><i class="fa-solid fa-house"></i> 홈</a>
+    <a href="/mypage"><i class="fa-solid fa-user"></i> 마이페이지</a>
+  </nav>
+  <div class="user-info">
+    <i class="fa-solid fa-circle-user" style="font-size:18px;opacity:.8"></i>
+    <span id="userName">로딩중...</span>님
+    <button class="btn-logout" onclick="doLogout()">
+      <i class="fa-solid fa-right-from-bracket"></i> 로그아웃
+    </button>
+  </div>
+</header>
+
+<div class="queue-wrap">
+  <div class="queue-box">
+
+    <!-- ① 연결 중 -->
+    <div id="stateLoading" class="queue-state">
+      <div class="queue-spinner"><i class="fa-solid fa-spinner fa-spin"></i></div>
+      <p class="queue-desc" style="margin-top:8px">대기열에 연결 중입니다...</p>
+    </div>
+
+    <!-- ② 대기 중 -->
+    <div id="stateWaiting" class="queue-state" style="display:none">
+      <div class="queue-icon waiting">
+        <i class="fa-solid fa-hourglass-half"></i>
+      </div>
+      <h2 class="queue-title">현재 접속 대기 중입니다</h2>
+
+      <div class="queue-stats">
+        <div class="queue-stat-card primary">
+          <div class="qsc-label">내 대기번호</div>
+          <div class="qsc-value" id="myPosition">—</div>
+          <div class="qsc-unit">번</div>
+        </div>
+        <div class="queue-stat-card">
+          <div class="qsc-label">현재 입장 인원</div>
+          <div class="qsc-value green" id="activeCount">—</div>
+          <div class="qsc-unit">명</div>
+        </div>
+        <div class="queue-stat-card">
+          <div class="qsc-label">예상 대기 시간</div>
+          <div class="qsc-value orange" id="etaDisplay">—</div>
+          <div class="qsc-unit" id="etaUnit">분</div>
+        </div>
+      </div>
+
+      <!-- 프로그레스바 -->
+      <div class="queue-progress-wrap">
+        <div class="queue-progress-bar" id="queueProgressBar" style="width:50%"></div>
+      </div>
+
+      <p class="queue-desc">
+        <i class="fa-solid fa-circle-info" style="color:#3b82f6;margin-right:5px"></i>
+        앞 사람이 예매를 완료하면 자동으로 입장합니다.<br>
+        <span style="font-size:12px;color:#9ca3af">이 창을 닫거나 새로고침해도 순번이 유지됩니다.</span>
+      </p>
+    </div>
+
+    <!-- ③ 입장 가능 -->
+    <div id="stateActive" class="queue-state" style="display:none">
+      <div class="queue-icon active">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+      <h2 class="queue-title active-title">입장 가능합니다!</h2>
+
+      <div class="queue-countdown-wrap">
+        <div class="queue-countdown" id="countdownNum">3</div>
+        <p class="queue-desc">초 후 자동으로 이동합니다</p>
+      </div>
+
+      <button class="btn btn-primary btn-lg" onclick="goToBooking()"
+              style="justify-content:center;min-width:200px;font-size:16px">
+        <i class="fa-solid fa-arrow-right-to-bracket"></i> 지금 입장하기
+      </button>
+    </div>
+
+    <!-- ④ 만료 (토큰이 사라진 경우) -->
+    <div id="stateExpired" class="queue-state" style="display:none">
+      <div class="queue-icon" style="background:#fee2e2;color:#dc2626">
+        <i class="fa-solid fa-circle-exclamation"></i>
+      </div>
+      <h2 class="queue-title" style="color:#dc2626">대기 시간이 초과되었습니다</h2>
+      <p class="queue-desc">대기열을 다시 시작합니다...</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const TOKEN_KEY = 'queue_token';
+let pollTimer     = null;
+let countdownTimer = null;
+let myToken = localStorage.getItem(TOKEN_KEY) || '';
+let isActiveShowing = false;
+
+/* ── 초기화 ─────────────────────────────── */
+async function init() {
+  const me = await fetch('/api/me').then(r => r.json()).catch(() => null);
+  if (!me || !me.logged_in) { location.href = '/login'; return; }
+  document.getElementById('userName').textContent = me.name;
+
+  await joinQueue();
+}
+
+/* ── 대기열 참가 ─────────────────────────── */
+async function joinQueue() {
+  try {
+    const body = myToken ? { token: myToken } : {};
+    const res  = await fetch('/api/queue/join', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    if (data.token) {
+      myToken = data.token;
+      localStorage.setItem(TOKEN_KEY, myToken);
+    }
+
+    if (data.status === 'active') {
+      showActive(data.remaining);
+    } else {
+      showWaiting(data.position, data.active_count, data.eta_min);
+      startPolling();
+    }
+  } catch (err) {
+    console.error('Join error:', err);
+    setTimeout(joinQueue, 3000);
+  }
+}
+
+/* ── 폴링 시작 ───────────────────────────── */
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(poll, 3000);
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+/* ── 상태 폴링 ───────────────────────────── */
+async function poll() {
+  if (!myToken) return;
+  try {
+    const res  = await fetch(`/api/queue/status?token=${encodeURIComponent(myToken)}`);
+    const data = await res.json();
+
+    if (data.status === 'active') {
+      showActive(data.remaining);
+    } else if (data.status === 'waiting') {
+      showWaiting(data.position, data.active_count, data.eta_min);
+    } else {
+      // expired → 재참가
+      showExpired();
+    }
+  } catch (e) {
+    console.error('Poll error:', e);
+  }
+}
+
+/* ── UI: 대기 상태 ───────────────────────── */
+function showWaiting(position, activeCount, etaMin) {
+  if (isActiveShowing) return;
+  hide('stateLoading'); hide('stateActive'); hide('stateExpired');
+  show('stateWaiting');
+
+  document.getElementById('myPosition').textContent  = position ?? '—';
+  document.getElementById('activeCount').textContent = activeCount ?? '—';
+
+  const etaEl   = document.getElementById('etaDisplay');
+  const unitEl  = document.getElementById('etaUnit');
+  if (etaMin === undefined || etaMin === null) {
+    etaEl.textContent = '—'; unitEl.textContent = '';
+  } else if (etaMin < 1) {
+    etaEl.textContent = '잠시후'; unitEl.textContent = '';
+  } else {
+    etaEl.textContent = '약 ' + etaMin; unitEl.textContent = '분';
+  }
+
+  // 프로그레스바: 내 위치 기준 (대기번호가 낮을수록 가득 참)
+  const MAX_SHOW = 50;
+  const pct = Math.max(5, Math.min(95, (1 - (position - 1) / MAX_SHOW) * 100));
+  document.getElementById('queueProgressBar').style.width = pct + '%';
+}
+
+/* ── UI: 입장 가능 → 즉시 이동 ───────────── */
+function showActive(remainingSecs) {
+  if (isActiveShowing) return;
+  isActiveShowing = true;
+  stopPolling();
+  goToBooking();
+}
+
+/* ── UI: 만료 → 재참가 ──────────────────── */
+function showExpired() {
+  stopPolling();
+  localStorage.removeItem(TOKEN_KEY);
+  myToken = '';
+  hide('stateLoading'); hide('stateWaiting'); hide('stateActive');
+  show('stateExpired');
+  // 3초 후 재참가
+  setTimeout(async () => {
+    isActiveShowing = false;
+    hide('stateExpired');
+    show('stateLoading');
+    await joinQueue();
+  }, 3000);
+}
+
+/* ── 이동 ───────────────────────────────── */
+function goToBooking() {
+  stopPolling();
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  location.href = '/booking';
+}
+
+/* ── 헬퍼 ───────────────────────────────── */
+function show(id) { document.getElementById(id).style.display = 'flex'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/';
+}
+
+init();
+</script>
+</body>
+</html>

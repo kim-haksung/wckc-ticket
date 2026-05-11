@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회원 관리 - 예아단 특별공연</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="/static/js/csrf.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="brand">
+    <div class="logo-icon"><i class="fa-solid fa-ticket"></i></div>
+    예아단 특별공연
+    <span style="font-size:11px;background:var(--accent);color:var(--primary-dark);padding:2px 8px;border-radius:6px;font-weight:700;margin-left:4px">관리자</span>
+  </div>
+  <div class="user-info">
+    <i class="fa-solid fa-user-shield" style="font-size:18px;opacity:.8"></i>
+    <span id="adminName"></span>
+    <button class="btn-logout" onclick="doLogout()"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+  </div>
+</header>
+
+<aside class="admin-nav">
+  <div class="nav-section">메뉴</div>
+  <a href="/admin/"><i class="fa-solid fa-chart-line"></i> <span>대시보드</span></a>
+  <a href="/admin/members" class="active"><i class="fa-solid fa-users"></i> <span>회원 관리</span></a>
+  <a href="/admin/reservations"><i class="fa-solid fa-ticket"></i> <span>예매 관리</span></a>
+  <a href="/admin/seats"><i class="fa-solid fa-map-location-dot"></i> <span>좌석 관리</span></a>
+</aside>
+
+<main class="admin-content">
+  <div class="page-header">
+    <div class="ph-icon"><i class="fa-solid fa-users"></i></div>
+    <div>
+      <h1>회원 관리</h1>
+      <p>등록된 회원 정보를 조회하고 관리합니다.</p>
+    </div>
+  </div>
+
+  <div id="alertBox" class="alert"></div>
+
+  <!-- 검색 필터 -->
+  <div class="filter-bar">
+    <div class="form-group">
+      <label><i class="fa-solid fa-magnifying-glass"></i> 검색 (이름/아이디)</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="검색어 입력">
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-church"></i> 출석교회</label>
+      <input type="text" id="churchInput" class="form-control" placeholder="교회명">
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-id-badge"></i> 직분</label>
+      <select id="positionInput" class="form-control">
+        <option value="">전체</option>
+        <option>성도</option><option>집사</option>
+        <option>장로</option><option>목사</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="loadMembers(1)">
+      <i class="fa-solid fa-magnifying-glass"></i> 검색
+    </button>
+    <button class="btn btn-outline" onclick="resetFilter()">
+      <i class="fa-solid fa-rotate-left"></i> 초기화
+    </button>
+  </div>
+
+  <!-- 회원 목록 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fa-solid fa-table"></i> 회원 목록
+      <span id="totalCount" style="font-size:12.5px;font-weight:400;opacity:.8;margin-left:6px"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>번호</th><th>아이디</th><th>성명</th><th>전화번호</th>
+              <th>출석교회</th><th>직분</th>
+              <th>환불 계좌</th>
+              <th>상태</th><th>가입일</th><th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="memberTable">
+            <tr><td colspan="10" class="loading">로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+</main>
+
+<!-- 수정 모달 -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i class="fa-solid fa-user-pen"></i> 회원 정보 수정</h3>
+      <button class="modal-close" onclick="closeEdit()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editId">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+        <div class="form-group"><label>성명</label><input type="text" id="editName" class="form-control"></div>
+        <div class="form-group"><label>전화번호</label><input type="text" id="editPhone" class="form-control"></div>
+        <div class="form-group"><label>출석교회</label><input type="text" id="editChurch" class="form-control"></div>
+        <div class="form-group">
+          <label>직분</label>
+          <select id="editPosition" class="form-control">
+            <option>성도</option><option>집사</option>
+            <option>장로</option><option>목사</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>활성 상태</label>
+          <select id="editActive" class="form-control">
+            <option value="1">활성</option>
+            <option value="0">비활성</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 비밀번호 변경 -->
+      <div style="margin-top:16px;padding:14px 16px;background:#fff7ed;
+                  border:1px solid #fed7aa;border-radius:10px">
+        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px">
+          <i class="fa-solid fa-key" style="margin-right:6px"></i>비밀번호 강제 변경
+          <span style="font-size:11.5px;font-weight:400;color:#b45309;margin-left:6px">
+            (비워두면 변경하지 않음)
+          </span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+          <div class="form-group" style="margin-bottom:0">
+            <label>새 비밀번호</label>
+            <input type="password" id="editNewPw" class="form-control"
+                   placeholder="8자 이상" autocomplete="new-password">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>비밀번호 확인</label>
+            <input type="password" id="editNewPw2" class="form-control"
+                   placeholder="재입력" autocomplete="new-password">
+          </div>
+        </div>
+        <div id="pwErr" style="display:none;margin-top:7px;font-size:12.5px;color:#dc2626">
+          <i class="fa-solid fa-circle-exclamation"></i> <span id="pwErrMsg"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeEdit()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-primary" onclick="saveEdit()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 비활성화 확인 모달 -->
+<div class="modal-overlay" id="delModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header" style="background:linear-gradient(135deg,var(--danger),#dc2626)">
+      <h3><i class="fa-solid fa-user-slash"></i> 회원 비활성화</h3>
+      <button class="modal-close" onclick="closeDel()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning show">
+        <i class="fa-solid fa-triangle-exclamation"></i> 해당 회원을 비활성화하고 예매를 모두 취소하시겠습니까?
+      </div>
+      <p id="delInfo" style="font-size:13.5px;color:var(--gray);margin-top:10px"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDel()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-danger" id="delConfirmBtn" onclick="confirmDel()">
+        <i class="fa-solid fa-user-slash"></i> 비활성화
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let delTargetId = null;
+
+(async () => {
+  const me = await fetch('/api/me').then(r => r.json());
+  if (!me.logged_in || me.role !== 'admin') { location.href = '/'; return; }
+  document.getElementById('adminName').textContent = me.name + ' 관리자';
+  loadMembers(1);
+})();
+
+async function loadMembers(page = 1) {
+  currentPage = page;
+  const search   = document.getElementById('searchInput').value;
+  const church   = document.getElementById('churchInput').value;
+  const position = document.getElementById('positionInput').value;
+
+  const params = new URLSearchParams({ search, church, position, page });
+  const res  = await fetch(`/api/admin/members?${params}`);
+  const data = await res.json();
+
+  document.getElementById('totalCount').textContent = `(총 ${data.total}명)`;
+  const tbody = document.getElementById('memberTable');
+
+  if (!data.members.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray);padding:48px">회원이 없습니다.</td></tr>';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.members.map(m => `
+    <tr>
+      <td style="color:var(--gray);font-size:12.5px">${m.id}</td>
+      <td><strong style="color:var(--primary)">${m.username}</strong></td>
+      <td>${m.name}</td>
+      <td>${m.phone}</td>
+      <td><i class="fa-solid fa-church" style="color:var(--accent);margin-right:4px;font-size:11px"></i>${m.church}</td>
+      <td>${m.position}</td>
+      <td style="font-size:12.5px">
+        ${(m.refund_bank && m.refund_account)
+          ? `<span style="display:inline-flex;align-items:center;gap:5px;
+                          background:#eff6ff;border:1px solid #bfdbfe;
+                          border-radius:6px;padding:3px 8px;white-space:nowrap">
+               <span style="background:#1e6bb8;color:#fff;font-size:10.5px;font-weight:700;
+                            padding:1px 6px;border-radius:99px">${m.refund_bank}</span>
+               <span style="color:#1e3a5f;font-weight:600;letter-spacing:.3px">${m.refund_account}</span>
+             </span>
+             <span style="display:block;font-size:11.5px;color:#6b7280;margin-top:2px;padding-left:2px">${m.refund_holder || ''}</span>`
+          : `<span style="color:#d1d5db;font-size:12px">—</span>`
+        }
+      </td>
+      <td><span class="badge ${m.is_active ? 'badge-success' : 'badge-secondary'}">${m.is_active ? '활성' : '비활성'}</span></td>
+      <td style="font-size:12.5px;color:var(--gray)">${m.created_at ? m.created_at.substring(0,10) : '-'}</td>
+      <td style="display:flex;gap:6px;flex-wrap:nowrap">
+        <button class="btn btn-primary btn-sm" onclick='openEdit(${JSON.stringify(m)})'>
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="openDel(${m.id},'${m.name}')">
+          <i class="fa-solid fa-user-slash"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+
+  const totalPages = Math.ceil(data.total / 20);
+  let pHtml = '';
+  for (let i = 1; i <= totalPages; i++) {
+    pHtml += `<button class="page-btn ${i===page?'active':''}" onclick="loadMembers(${i})">${i}</button>`;
+  }
+  document.getElementById('pagination').innerHTML = pHtml;
+}
+
+function openEdit(m) {
+  document.getElementById('editId').value       = m.id;
+  document.getElementById('editName').value     = m.name;
+  document.getElementById('editPhone').value    = m.phone;
+  document.getElementById('editChurch').value   = m.church;
+  document.getElementById('editPosition').value = m.position;
+  document.getElementById('editActive').value   = m.is_active;
+  document.getElementById('editNewPw').value    = '';
+  document.getElementById('editNewPw2').value   = '';
+  document.getElementById('pwErr').style.display = 'none';
+  document.getElementById('editModal').classList.add('show');
+}
+function closeEdit() {
+  document.getElementById('editModal').classList.remove('show');
+  document.getElementById('editNewPw').value  = '';
+  document.getElementById('editNewPw2').value = '';
+  document.getElementById('pwErr').style.display = 'none';
+}
+
+async function saveEdit() {
+  const newPw  = document.getElementById('editNewPw').value;
+  const newPw2 = document.getElementById('editNewPw2').value;
+  const pwErr  = document.getElementById('pwErr');
+
+  // 비밀번호 입력 시 유효성 검사
+  if (newPw || newPw2) {
+    if (newPw.length < 8) {
+      document.getElementById('pwErrMsg').textContent = '비밀번호는 8자 이상이어야 합니다.';
+      pwErr.style.display = 'block'; return;
+    }
+    if (newPw !== newPw2) {
+      document.getElementById('pwErrMsg').textContent = '비밀번호가 일치하지 않습니다.';
+      pwErr.style.display = 'block'; return;
+    }
+  }
+  pwErr.style.display = 'none';
+
+  const id = document.getElementById('editId').value;
+  const body = {
+    name:      document.getElementById('editName').value,
+    phone:     document.getElementById('editPhone').value,
+    church:    document.getElementById('editChurch').value,
+    position:  document.getElementById('editPosition').value,
+    is_active: document.getElementById('editActive').value === '1'
+  };
+  if (newPw) body.new_password = newPw;
+
+  const res = await fetch(`/api/admin/members/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  closeEdit();
+  if (res.ok) { showAlert('회원 정보가 수정되었습니다.', 'success'); loadMembers(currentPage); }
+  else        { showAlert('수정 중 오류가 발생했습니다.', 'danger'); }
+}
+
+function openDel(id, name) {
+  delTargetId = id;
+  document.getElementById('delInfo').innerHTML =
+    `<i class="fa-solid fa-user" style="color:var(--primary);margin-right:6px"></i>대상: <strong>${name}</strong> (ID: ${id})`;
+  document.getElementById('delModal').classList.add('show');
+}
+function closeDel() { document.getElementById('delModal').classList.remove('show'); delTargetId = null; }
+
+async function confirmDel() {
+  if (!delTargetId) return;
+  const btn = document.getElementById('delConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
+  const res = await fetch(`/api/admin/members/${delTargetId}`, { method: 'DELETE' });
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-user-slash"></i> 비활성화';
+  closeDel();
+  if (res.ok) { showAlert('처리 완료되었습니다.', 'success'); loadMembers(currentPage); }
+  else        { showAlert('오류가 발생했습니다.', 'danger'); }
+}
+
+function resetFilter() {
+  document.getElementById('searchInput').value   = '';
+  document.getElementById('churchInput').value   = '';
+  document.getElementById('positionInput').value = '';
+  loadMembers(1);
+}
+
+function showAlert(msg, type) {
+  const al = document.getElementById('alertBox');
+  al.innerHTML = `<i class="fa-solid fa-${type==='success'?'circle-check':'circle-exclamation'}"></i> ` + msg;
+  al.className = `alert alert-${type} show`;
+  setTimeout(() => al.classList.remove('show'), 4000);
+}
+
+async function doLogout() { await fetch('/api/logout',{method:'POST'}); location.href='/'; }
+</script>
+</body>
+</html>
