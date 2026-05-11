@@ -1577,6 +1577,32 @@ def admin_get_config():
     cfg.setdefault('booking_open_time', '')
     return jsonify(cfg)
 
+@app.route('/api/admin/config', methods=['POST'])
+@login_required
+@admin_required
+@csrf_protect
+def admin_set_config():
+    """시스템 설정 저장"""
+    data = request.get_json() or {}
+    conn = get_db()
+    for key in ('max_active', 'booking_open_time'):
+        if key in data:
+            conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, data[key]))
+            if key == 'max_active':
+                global MAX_ACTIVE
+                try:
+                    MAX_ACTIVE = int(data[key])
+                except Exception:
+                    pass
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+# ────────────────────────────────────────────────────────────
+# 앱 시작
+# ────────────────────────────────────────────────────────────
+init_db()
 
 # DB config에서 설정값 로드
 try:
