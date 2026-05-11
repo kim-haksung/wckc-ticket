@@ -544,7 +544,7 @@ def queue_join():
                 pass  # 잘못된 형식이면 무시
 
     with _ql:
-        # ① 기존 토큰 복원 (새로고침)
+        # ① 기존 토큰 복원 (새로고침/재접속)
         if existing:
             if existing in _active:
                 v = _active[existing]
@@ -559,6 +559,15 @@ def queue_join():
                 return jsonify({'status': 'waiting', 'token': existing, 'position': pos,
                                 'active_count': len(_active), 'waiting_count': len(_waiting),
                                 'eta_min': max(1, eta)})
+
+        # ① -b 같은 uid가 이미 _active에 있으면 해당 토큰 재사용
+        # (뒤로가기·탭 닫기 등으로 sendQueueLeave가 누락됐을 때 토큰 중복 방지)
+        for tok, info in _active.items():
+            if info['uid'] == uid:
+                info['heartbeat'] = time.time()
+                remaining = max(0, int(ACTIVE_TIMEOUT - (time.time() - info['entered_at'])))
+                return jsonify({'status': 'active', 'token': tok,
+                                'remaining': remaining, 'active_count': len(_active)})
 
         # ② 새 토큰 발급
         token = str(uuid.uuid4())
