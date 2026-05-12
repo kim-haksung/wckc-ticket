@@ -532,7 +532,9 @@ def queue_join():
         if open_time_str:
             try:
                 open_dt = datetime.datetime.strptime(open_time_str, '%Y-%m-%d %H:%M:%S')
-                now_dt  = datetime.datetime.now()
+                # 서버 시간대와 무관하게 한국 시간(KST=UTC+9) 기준으로 비교
+                KST = datetime.timezone(datetime.timedelta(hours=9))
+                now_dt = datetime.datetime.now(KST).replace(tzinfo=None)
                 if now_dt < open_dt:
                     return jsonify({
                         'error': '예매가 아직 시작되지 않았습니다.',
