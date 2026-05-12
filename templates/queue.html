@@ -30,13 +30,13 @@
 <div class="queue-wrap">
   <div class="queue-box">
 
-    <!-- ① 연결 중 -->
+    <!-- 연결 중 -->
     <div id="stateLoading" class="queue-state">
       <div class="queue-spinner"><i class="fa-solid fa-spinner fa-spin"></i></div>
       <p class="queue-desc" style="margin-top:8px">대기열에 연결 중입니다...</p>
     </div>
 
-    <!-- ② 대기 중 -->
+    <!-- 대기 중 -->
     <div id="stateWaiting" class="queue-state" style="display:none">
       <div class="queue-icon waiting">
         <i class="fa-solid fa-hourglass-half"></i>
@@ -46,22 +46,21 @@
       <div class="queue-stats">
         <div class="queue-stat-card primary">
           <div class="qsc-label">내 대기번호</div>
-          <div class="qsc-value" id="myPosition">—</div>
+          <div class="qsc-value" id="myPosition">-</div>
           <div class="qsc-unit">번</div>
         </div>
         <div class="queue-stat-card">
           <div class="qsc-label">현재 입장 인원</div>
-          <div class="qsc-value green" id="activeCount">—</div>
+          <div class="qsc-value green" id="activeCount">-</div>
           <div class="qsc-unit">명</div>
         </div>
         <div class="queue-stat-card">
           <div class="qsc-label">예상 대기 시간</div>
-          <div class="qsc-value orange" id="etaDisplay">—</div>
+          <div class="qsc-value orange" id="etaDisplay">-</div>
           <div class="qsc-unit" id="etaUnit">분</div>
         </div>
       </div>
 
-      <!-- 프로그레스바 -->
       <div class="queue-progress-wrap">
         <div class="queue-progress-bar" id="queueProgressBar" style="width:50%"></div>
       </div>
@@ -73,7 +72,7 @@
       </p>
     </div>
 
-    <!-- ③ 입장 가능 -->
+    <!-- 입장 가능 -->
     <div id="stateActive" class="queue-state" style="display:none">
       <div class="queue-icon active">
         <i class="fa-solid fa-circle-check"></i>
@@ -91,7 +90,7 @@
       </button>
     </div>
 
-    <!-- ④ 만료 (토큰이 사라진 경우) -->
+    <!-- 만료 -->
     <div id="stateExpired" class="queue-state" style="display:none">
       <div class="queue-icon" style="background:#fee2e2;color:#dc2626">
         <i class="fa-solid fa-circle-exclamation"></i>
@@ -100,7 +99,7 @@
       <p class="queue-desc">대기열을 다시 시작합니다...</p>
     </div>
 
-    <!-- ⑤ 예매 시간 전 -->
+    <!-- 예매 시간 전 -->
     <div id="stateNotOpen" class="queue-state" style="display:none">
       <div class="queue-icon" style="background:#fef3c7;color:#d97706">
         <i class="fa-solid fa-clock"></i>
@@ -113,10 +112,10 @@
       </button>
     </div>
 
-    <!-- ⑥ 연결 오류 -->
+    <!-- 연결 오류 -->
     <div id="stateError" class="queue-state" style="display:none">
       <div class="queue-icon" style="background:#fee2e2;color:#dc2626">
-        <i class="fa-solid fa-wifi" style="text-decoration:line-through"></i>
+        <i class="fa-solid fa-triangle-exclamation"></i>
       </div>
       <h2 class="queue-title" style="color:#dc2626">연결 오류</h2>
       <p class="queue-desc" id="errorMsg">서버에 연결할 수 없습니다.</p>
@@ -130,21 +129,19 @@
 </div>
 
 <script>
-const TOKEN_KEY = 'queue_token';
-const MAX_JOIN_RETRIES = 6;   // 최대 재시도 횟수 (초과 시 오류 화면)
+const TOKEN_KEY   = 'queue_token';
+const MAX_RETRIES = 6;
 
-let pollTimer      = null;
-let countdownTimer = null;
-let myToken        = localStorage.getItem(TOKEN_KEY) || '';
+let pollTimer       = null;
+let countdownTimer  = null;
+let myToken         = localStorage.getItem(TOKEN_KEY) || '';
 let isActiveShowing = false;
-let joinRetryCount  = 0;
+let retryCount      = 0;
 
-/* ── 초기화 ─────────────────────────────── */
+/* 초기화 */
 async function init() {
-  // CSRF 토큰 준비 완료까지 대기 (race condition 방지)
   if (window.csrfReady) await window.csrfReady;
 
-  // 로그인 확인
   const me = await fetch('/api/me').then(r => r.json()).catch(() => null);
   if (!me || !me.logged_in) { location.href = '/login'; return; }
   document.getElementById('userName').textContent = me.name;
@@ -152,7 +149,7 @@ async function init() {
   await joinQueue();
 }
 
-/* ── 대기열 참가 ─────────────────────────── */
+/* 대기열 참가 */
 async function joinQueue() {
   try {
     const body = myToken ? { token: myToken } : {};
@@ -162,9 +159,8 @@ async function joinQueue() {
       body:    JSON.stringify(body)
     });
 
-    /* ── 정상 응답 ── */
     if (res.ok) {
-      joinRetryCount = 0;
+      retryCount = 0;
       const data = await res.json();
       if (data.token) {
         myToken = data.token;
@@ -179,21 +175,18 @@ async function joinQueue() {
       return;
     }
 
-    /* ── 403 처리 ── */
     if (res.status === 403) {
       let errData = null;
       try { errData = await res.json(); } catch (e) {}
 
-      // 예매 오픈 시간 전 → 안내 화면 표시 (재시도 안 함)
       if (errData && errData.open_time) {
         showNotOpenYet(errData.open_time_display || errData.open_time);
         return;
       }
 
-      // CSRF 오류 → 토큰 재발급 후 재시도
-      console.warn('Queue join 403 (CSRF?), retry', joinRetryCount + 1);
-      if (joinRetryCount < MAX_JOIN_RETRIES) {
-        joinRetryCount++;
+      console.warn('queue/join 403 (CSRF?), retry', retryCount + 1);
+      if (retryCount < MAX_RETRIES) {
+        retryCount++;
         if (window.refreshCsrfToken) await window.refreshCsrfToken();
         setTimeout(joinQueue, 1500);
       } else {
@@ -202,20 +195,18 @@ async function joinQueue() {
       return;
     }
 
-    /* ── 기타 비정상 응답 ── */
-    console.warn('Queue join non-OK:', res.status);
-    if (joinRetryCount < MAX_JOIN_RETRIES) {
-      joinRetryCount++;
+    console.warn('queue/join non-OK:', res.status);
+    if (retryCount < MAX_RETRIES) {
+      retryCount++;
       setTimeout(joinQueue, 2000);
     } else {
-      showError('서버 응답 오류(' + res.status + ').<br>페이지를 새로고침 해주세요.');
+      showError('서버 응답 오류 (' + res.status + ').<br>페이지를 새로고침 해주세요.');
     }
 
   } catch (err) {
-    // 네트워크 오류
     console.error('Join error:', err);
-    if (joinRetryCount < MAX_JOIN_RETRIES) {
-      joinRetryCount++;
+    if (retryCount < MAX_RETRIES) {
+      retryCount++;
       setTimeout(joinQueue, 3000);
     } else {
       showError('네트워크 오류가 발생했습니다.<br>인터넷 연결을 확인하고 새로고침 해주세요.');
@@ -223,7 +214,7 @@ async function joinQueue() {
   }
 }
 
-/* ── 폴링 시작 ───────────────────────────── */
+/* 폴링 */
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(poll, 3000);
@@ -232,4 +223,101 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-/* ── �
+async function poll() {
+  if (!myToken) return;
+  try {
+    const res  = await fetch('/api/queue/status?token=' + encodeURIComponent(myToken));
+    const data = await res.json();
+    if (data.status === 'active') {
+      showActive(data.remaining);
+    } else if (data.status === 'waiting') {
+      showWaiting(data.position, data.active_count, data.eta_min);
+    } else {
+      showExpired();
+    }
+  } catch (e) {
+    console.error('Poll error:', e);
+  }
+}
+
+/* UI: 대기 */
+function showWaiting(position, activeCount, etaMin) {
+  if (isActiveShowing) return;
+  hideAll(); show('stateWaiting');
+  document.getElementById('myPosition').textContent  = position   != null ? position   : '-';
+  document.getElementById('activeCount').textContent = activeCount != null ? activeCount : '-';
+  const etaEl  = document.getElementById('etaDisplay');
+  const unitEl = document.getElementById('etaUnit');
+  if (etaMin == null) {
+    etaEl.textContent = '-'; unitEl.textContent = '';
+  } else if (etaMin < 1) {
+    etaEl.textContent = '잠시후'; unitEl.textContent = '';
+  } else {
+    etaEl.textContent = '약 ' + etaMin; unitEl.textContent = '분';
+  }
+  var pct = Math.max(5, Math.min(95, (1 - (position - 1) / 50) * 100));
+  document.getElementById('queueProgressBar').style.width = pct + '%';
+}
+
+/* UI: 입장 */
+function showActive(remainingSecs) {
+  if (isActiveShowing) return;
+  isActiveShowing = true;
+  stopPolling();
+  goToBooking();
+}
+
+/* UI: 만료 */
+function showExpired() {
+  stopPolling();
+  localStorage.removeItem(TOKEN_KEY);
+  myToken = '';
+  hideAll(); show('stateExpired');
+  setTimeout(async function() {
+    isActiveShowing = false;
+    retryCount = 0;
+    hideAll(); show('stateLoading');
+    await joinQueue();
+  }, 3000);
+}
+
+/* UI: 예매 시간 전 */
+function showNotOpenYet(openTimeDisplay) {
+  hideAll(); show('stateNotOpen');
+  document.getElementById('notOpenMsg').textContent =
+    '예매 오픈: ' + openTimeDisplay + '  |  오픈 시간에 새로고침 해주세요.';
+  setTimeout(async function() {
+    retryCount = 0;
+    hideAll(); show('stateLoading');
+    await joinQueue();
+  }, 60000);
+}
+
+/* UI: 오류 */
+function showError(msg) {
+  stopPolling(); hideAll(); show('stateError');
+  document.getElementById('errorMsg').innerHTML = msg;
+}
+
+/* 이동 */
+function goToBooking() {
+  stopPolling();
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  location.href = '/booking';
+}
+
+/* 헬퍼 */
+var ALL_STATES = ['stateLoading','stateWaiting','stateActive','stateExpired','stateNotOpen','stateError'];
+function hideAll() { ALL_STATES.forEach(function(id){ hide(id); }); }
+function show(id)  { document.getElementById(id).style.display = 'flex'; }
+function hide(id)  { document.getElementById(id).style.display = 'none'; }
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/';
+}
+
+init();
+</script>
+</body>
+</html>
