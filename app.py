@@ -790,6 +790,56 @@ def logout():
     session.clear()
     return jsonify({'ok': True})
 
+
+@app.route('/api/verify-user', methods=['POST'])
+@csrf_protect
+def verify_user():
+    """비밀번호 변경 전 본인확인: 아이디+이름+전화번호+교회명 일치 여부 검증"""
+    d = request.get_json() or {}
+    username = d.get('username', '').strip()
+    name     = d.get('name', '').strip()
+    phone    = d.get('phone', '').strip()
+    church   = d.get('church', '').strip()
+    if not all([username, name, phone, church]):
+        return jsonify({'error': '모든 항목을 입력해 주세요.'}), 400
+    conn = get_db()
+    user = conn.execute(
+        'SELECT id FROM users WHERE username=? AND name=? AND phone=? AND church=?',
+        (username, name, phone, church)
+    ).fetchone()
+    conn.close()
+    if not user:
+        return jsonify({'error': '등록된 회원이 없습니다.'}), 404
+    return jsonify({'ok': True})
+
+@app.route('/api/reset-password', methods=['POST'])
+@csrf_protect
+def reset_password():
+    """본인확인 후 비밀번호 재설정"""
+    d = request.get_json() or {}
+    username    = d.get('username', '').strip()
+    name        = d.get('name', '').strip()
+    phone       = d.get('phone', '').strip()
+    church      = d.get('church', '').strip()
+    new_password = d.get('new_password', '').strip()
+    if not all([username, name, phone, church, new_password]):
+        return jsonify({'error': '모든 항목을 입력해 주세요.'}), 400
+    if len(new_password) < 8:
+        return jsonify({'error': '비밀번호는 8자 이상이어야 합니다.'}), 400
+    conn = get_db()
+    user = conn.execute(
+        'SELECT id FROM users WHERE username=? AND name=? AND phone=? AND church=?',
+        (username, name, phone, church)
+    ).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': '등록된 회원이 없습니다.'}), 404
+    conn.execute('UPDATE users SET password=? WHERE id=?',
+                 (hash_password(new_password), user['id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
 @app.route('/api/me')
 def me():
     if 'user_id' not in session:
@@ -1382,6 +1432,36 @@ def admin_update_payment(res_id):
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+
+@app.route('/api/admin/reservations/bulk-payment', methods=['POST'])
+@csrf_protect
+@login_required
+@admin_required
+def admin_bulk_payment():
+    """선택한 예매 건 일괄 입금처리/취소"""
+    d      = request.get_json() or {}
+    ids    = d.get('ids', [])
+    action = d.get('action')  # 'pay' 또는 'cancel'
+    if not ids or action not in ('pay', 'cancel'):
+        return jsonify({'error': '잘못된 요청입니다.'}), 400
+    conn = get_db()
+    if action == 'pay':
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for rid in ids:
+            conn.execute(
+                'UPDATE reservations SET payment_status="paid", payment_at=? WHERE id=?',
+                (now, rid)
+            )
+    else:
+        for rid in ids:
+            conn.execute(
+                'UPDATE reservations SET payment_status=NULL, payment_at=NULL WHERE id=?',
+                (rid,)
+            )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'processed': len(ids)})
 
 @app.route('/api/admin/reservations/<int:res_id>', methods=['DELETE'])
 @csrf_protect

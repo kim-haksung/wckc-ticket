@@ -6,6 +6,94 @@
 <title>로그인 - 예아단 특별공연</title>
 <link rel="stylesheet" href="/static/css/style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* 비밀번호 변경 모달 */
+.pw-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 9000;
+  align-items: center;
+  justify-content: center;
+}
+.pw-modal-overlay.show { display: flex; }
+.pw-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.pw-modal-header {
+  background: linear-gradient(135deg, var(--primary,#1e3a5f), #2563eb);
+  color: #fff;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pw-modal-header h3 { margin:0; font-size:16px; font-weight:700; flex:1; }
+.pw-modal-close {
+  background: none; border: none; color: rgba(255,255,255,.8);
+  font-size: 20px; cursor: pointer; padding: 0 2px;
+  line-height: 1;
+}
+.pw-modal-close:hover { color:#fff; }
+.pw-modal-body { padding: 22px; }
+.pw-modal-footer {
+  padding: 14px 22px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  border-top: 1px solid #e5e7eb;
+}
+/* 단계 표시 */
+.pw-step { display:none; }
+.pw-step.active { display:block; }
+.step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 18px;
+}
+.step-dot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #9ca3af;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+.step-dot.active { background: #2563eb; color: #fff; }
+.step-dot.done   { background: #10b981; color: #fff; }
+.step-line { flex:1; height:2px; background:#e5e7eb; }
+.step-line.done { background:#10b981; }
+/* 에러 메시지 */
+.pw-error {
+  display:none;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: #dc2626;
+  line-height: 1.6;
+}
+.pw-error.show { display:block; }
+.pw-link {
+  color: var(--primary,#1e3a5f);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 13.5px;
+}
+.pw-link:hover { text-decoration: underline; }
+</style>
 <script src="/static/js/csrf.js"></script>
 </head>
 <body>
@@ -49,11 +137,84 @@
       계정이 없으신가요?
       <a href="/register" style="color:var(--primary);font-weight:700"> 회원가입</a>
     </div>
+    <div style="text-align:center;margin-top:10px">
+      <a class="pw-link" onclick="openPwModal()">
+        <i class="fa-solid fa-key" style="margin-right:4px;font-size:12px"></i>비밀번호 변경
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- 비밀번호 변경 모달 -->
+<div class="pw-modal-overlay" id="pwModal">
+  <div class="pw-modal">
+    <div class="pw-modal-header">
+      <i class="fa-solid fa-key"></i>
+      <h3>비밀번호 변경</h3>
+      <button class="pw-modal-close" onclick="closePwModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="pw-modal-body">
+
+      <!-- 단계 표시 -->
+      <div class="step-indicator">
+        <div class="step-dot active" id="sdot1">1</div>
+        <div class="step-line" id="sline1"></div>
+        <div class="step-dot" id="sdot2">2</div>
+        <span style="margin-left:6px">본인확인 후 비밀번호를 변경합니다</span>
+      </div>
+
+      <!-- Step 1: 본인확인 -->
+      <div class="pw-step active" id="pwStep1">
+        <div class="form-group">
+          <label><i class="fa-solid fa-user" style="color:var(--primary);margin-right:4px"></i> 아이디</label>
+          <input type="text" id="pwUsername" class="form-control" placeholder="아이디 입력">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-id-card" style="color:var(--primary);margin-right:4px"></i> 이름</label>
+          <input type="text" id="pwName" class="form-control" placeholder="이름 입력">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-phone" style="color:var(--primary);margin-right:4px"></i> 전화번호</label>
+          <input type="text" id="pwPhone" class="form-control" placeholder="전화번호 입력 (예: 01012345678)">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-church" style="color:var(--primary);margin-right:4px"></i> 교회명</label>
+          <input type="text" id="pwChurch" class="form-control" placeholder="출석 교회명 입력">
+        </div>
+        <div class="pw-error" id="pwError1"></div>
+      </div>
+
+      <!-- Step 2: 새 비밀번호 입력 -->
+      <div class="pw-step" id="pwStep2">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px;color:#065f46">
+          <i class="fa-solid fa-circle-check" style="margin-right:6px"></i>
+          본인 확인이 완료되었습니다. 새 비밀번호를 입력해 주세요.
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock" style="color:var(--primary);margin-right:4px"></i> 새 비밀번호</label>
+          <input type="password" id="pwNew" class="form-control" placeholder="8자 이상 입력">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock" style="color:var(--primary);margin-right:4px"></i> 새 비밀번호 확인</label>
+          <input type="password" id="pwNewConfirm" class="form-control" placeholder="비밀번호 다시 입력">
+        </div>
+        <div class="pw-error" id="pwError2"></div>
+      </div>
+
+    </div>
+    <div class="pw-modal-footer">
+      <button class="btn btn-outline" onclick="closePwModal()"><i class="fa-solid fa-xmark"></i> 취소</button>
+      <button class="btn btn-primary" id="pwNextBtn" onclick="pwNext()">
+        <i class="fa-solid fa-arrow-right"></i> 본인확인
+      </button>
+    </div>
   </div>
 </div>
 
 <script>
 const redirect = "{{ redirect or '/' }}";
+
+/* ── 로그인 ── */
 document.getElementById('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = e.target.querySelector('[type=submit]');
@@ -79,6 +240,155 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> 로그인';
   }
+});
+
+/* ── 비밀번호 변경 모달 ── */
+let pwCurrentStep = 1;
+
+function openPwModal() {
+  pwCurrentStep = 1;
+  // 입력 초기화
+  ['pwUsername','pwName','pwPhone','pwChurch','pwNew','pwNewConfirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('pwError1').classList.remove('show');
+  document.getElementById('pwError2').classList.remove('show');
+  setStep(1);
+  document.getElementById('pwModal').classList.add('show');
+}
+
+function closePwModal() {
+  document.getElementById('pwModal').classList.remove('show');
+}
+
+function setStep(step) {
+  pwCurrentStep = step;
+  document.getElementById('pwStep1').classList.toggle('active', step === 1);
+  document.getElementById('pwStep2').classList.toggle('active', step === 2);
+
+  const dot1   = document.getElementById('sdot1');
+  const dot2   = document.getElementById('sdot2');
+  const line1  = document.getElementById('sline1');
+  const nextBtn = document.getElementById('pwNextBtn');
+
+  if (step === 1) {
+    dot1.className  = 'step-dot active';
+    dot2.className  = 'step-dot';
+    line1.className = 'step-line';
+    nextBtn.innerHTML = '<i class="fa-solid fa-arrow-right"></i> 본인확인';
+  } else {
+    dot1.className  = 'step-dot done';
+    dot2.className  = 'step-dot active';
+    line1.className = 'step-line done';
+    nextBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 변경완료';
+  }
+}
+
+async function pwNext() {
+  if (pwCurrentStep === 1) {
+    await doVerify();
+  } else {
+    await doChangePassword();
+  }
+}
+
+async function doVerify() {
+  const username = document.getElementById('pwUsername').value.trim();
+  const name     = document.getElementById('pwName').value.trim();
+  const phone    = document.getElementById('pwPhone').value.trim();
+  const church   = document.getElementById('pwChurch').value.trim();
+  const errEl    = document.getElementById('pwError1');
+
+  if (!username || !name || !phone || !church) {
+    errEl.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>모든 항목을 입력해 주세요.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const btn = document.getElementById('pwNextBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 확인 중...';
+
+  const res = await fetch('/api/verify-user', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ username, name, phone, church })
+  });
+
+  btn.disabled = false;
+
+  if (res.ok) {
+    errEl.classList.remove('show');
+    setStep(2);
+    setTimeout(() => document.getElementById('pwNew').focus(), 100);
+  } else {
+    errEl.innerHTML =
+      '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>' +
+      '등록된 회원이 없습니다.<br>' +
+      '관리자에게 문의하세요. <strong>02-3399-4061</strong>';
+    errEl.classList.add('show');
+    setStep(1);
+  }
+}
+
+async function doChangePassword() {
+  const username = document.getElementById('pwUsername').value.trim();
+  const name     = document.getElementById('pwName').value.trim();
+  const phone    = document.getElementById('pwPhone').value.trim();
+  const church   = document.getElementById('pwChurch').value.trim();
+  const newPw    = document.getElementById('pwNew').value;
+  const newPw2   = document.getElementById('pwNewConfirm').value;
+  const errEl    = document.getElementById('pwError2');
+
+  if (!newPw || !newPw2) {
+    errEl.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>새 비밀번호를 입력해 주세요.';
+    errEl.classList.add('show');
+    return;
+  }
+  if (newPw.length < 8) {
+    errEl.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>비밀번호는 8자 이상이어야 합니다.';
+    errEl.classList.add('show');
+    return;
+  }
+  if (newPw !== newPw2) {
+    errEl.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>비밀번호가 일치하지 않습니다.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const btn = document.getElementById('pwNextBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 변경 중...';
+
+  const res = await fetch('/api/reset-password', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ username, name, phone, church, new_password: newPw })
+  });
+
+  btn.disabled = false;
+
+  if (res.ok) {
+    closePwModal();
+    const al = document.getElementById('alertBox');
+    al.innerHTML = '<i class="fa-solid fa-circle-check"></i> 비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.';
+    al.className = 'alert alert-success show';
+    setTimeout(() => al.classList.remove('show'), 6000);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    errEl.innerHTML =
+      '<i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>' +
+      (data.error || '오류가 발생했습니다. 다시 시도해 주세요.');
+    errEl.classList.add('show');
+    setStep(1);
+  }
+}
+
+/* Enter 키 지원 */
+['pwUsername','pwName','pwPhone','pwChurch','pwNew','pwNewConfirm'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') pwNext(); });
 });
 </script>
 </body>

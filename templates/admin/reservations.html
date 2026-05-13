@@ -14,7 +14,6 @@
 .btn-unpay    { background:#F59E0B; color:white; }
 .btn-unpay:hover{ background:#d97706; transform:translateY(-1px); }
 tr.paid-row td { background: #f0fdf4 !important; }
-/* 메모 셀 */
 .memo-cell { max-width: 180px; }
 .memo-text {
   display: -webkit-box;
@@ -27,7 +26,6 @@ tr.paid-row td { background: #f0fdf4 !important; }
   cursor: help;
   word-break: break-all;
 }
-/* 입금완료 잠금 버튼 */
 .btn-locked {
   background: #e5e7eb !important;
   color: #9ca3af !important;
@@ -35,6 +33,28 @@ tr.paid-row td { background: #f0fdf4 !important; }
   pointer-events: none;
   border: 1px dashed #d1d5db;
 }
+/* 일괄처리 바 */
+.bulk-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  color: #1e40af;
+}
+.bulk-bar.show { display: flex; }
+.bulk-bar strong { font-weight: 700; }
+/* 체크박스 열 */
+th.chk-col, td.chk-col {
+  width: 36px;
+  text-align: center;
+  padding: 6px 4px !important;
+}
+input[type=checkbox] { cursor: pointer; accent-color: var(--primary); width:15px; height:15px; }
 </style>
 <script src="/static/js/csrf.js"></script>
 </head>
@@ -116,6 +136,23 @@ tr.paid-row td { background: #f0fdf4 !important; }
     <button class="btn btn-success" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> 엑셀</button>
   </div>
 
+  <!-- 일괄처리 바 -->
+  <div class="bulk-bar" id="bulkBar">
+    <i class="fa-solid fa-square-check" style="font-size:16px"></i>
+    <strong id="bulkCount">0</strong>건 선택됨
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-pay btn-sm" onclick="openBulkPay('pay')">
+        <i class="fa-solid fa-won-sign"></i> 일괄 입금완료
+      </button>
+      <button class="btn btn-unpay btn-sm" onclick="openBulkPay('cancel')">
+        <i class="fa-solid fa-rotate-left"></i> 일괄 입금취소
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="clearAllCheck()">
+        <i class="fa-solid fa-xmark"></i> 선택해제
+      </button>
+    </div>
+  </div>
+
   <!-- 예매 목록 -->
   <div class="card">
     <div class="card-header">
@@ -131,9 +168,12 @@ tr.paid-row td { background: #f0fdf4 !important; }
         <table>
           <thead>
             <tr>
+              <th class="chk-col">
+                <input type="checkbox" id="checkAll" title="전체선택" onchange="toggleAll(this.checked)">
+              </th>
               <th>예매번호</th><th>성명</th><th>아이디</th>
               <th>전화번호</th><th>출석교회</th><th>직분</th>
-              <th>층</th><th>구역</th><th>좌석</th>
+              <th>좌석번호</th>
               <th>예매일시</th><th>예매상태</th>
               <th>입금상태</th><th>입금일시</th>
               <th>메모</th>
@@ -141,7 +181,7 @@ tr.paid-row td { background: #f0fdf4 !important; }
             </tr>
           </thead>
           <tbody id="resTable">
-            <tr><td colspan="15" class="loading">로딩 중...</td></tr>
+            <tr><td colspan="14" class="loading">로딩 중...</td></tr>
           </tbody>
         </table>
       </div>
@@ -201,9 +241,9 @@ tr.paid-row td { background: #f0fdf4 !important; }
   </div>
 </div>
 
-<!-- 입금확인 모달 -->
+<!-- 입금확인 모달 (단건 + 일괄 공용) -->
 <div class="modal-overlay" id="payModal">
-  <div class="modal" style="max-width:440px">
+  <div class="modal" style="max-width:460px">
     <div class="modal-header" id="payModalHeader" style="background:linear-gradient(135deg,#10B981,#0e9e6e)">
       <h3 id="payModalTitle"><i class="fa-solid fa-won-sign"></i> 입금 확인</h3>
       <button class="modal-close" onclick="closePay()"><i class="fa-solid fa-xmark"></i></button>
@@ -224,6 +264,7 @@ let currentPage = 1;
 let delTargetId = null;
 let payTargetId = null;
 let payTargetAction = null;
+let payTargetBulk = false;
 
 const STATUS_MAP = {
   confirmed:       '<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> 정상</span>',
@@ -240,6 +281,7 @@ const STATUS_MAP = {
 
 async function loadRes(page = 1) {
   currentPage = page;
+  clearAllCheck();
   const search  = document.getElementById('searchInput').value;
   const status  = document.getElementById('statusInput').value;
   const payment = document.getElementById('paymentInput').value;
@@ -250,7 +292,6 @@ async function loadRes(page = 1) {
   const res  = await fetch(`/api/admin/reservations?${params}`);
   const data = await res.json();
 
-  // 클라이언트 사이드 입금 필터
   let list = data.reservations;
   if (payment === 'paid')   list = list.filter(r => r.payment_status === 'paid');
   if (payment === 'unpaid') list = list.filter(r => r.payment_status !== 'paid' && r.status === 'confirmed');
@@ -259,7 +300,7 @@ async function loadRes(page = 1) {
   const tbody = document.getElementById('resTable');
 
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;color:var(--gray);padding:48px">예매 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray);padding:48px">예매 내역이 없습니다.</td></tr>';
     document.getElementById('pagination').innerHTML = '';
     return;
   }
@@ -267,27 +308,34 @@ async function loadRes(page = 1) {
   tbody.innerHTML = list.map(r => {
     const isPaid = r.payment_status === 'paid';
     const isConfirmed = r.status === 'confirmed';
+
+    // 좌석번호 통합 표시: 1층 나구역 097번
+    const seatLabel = `${r.floor}층 ${r.section}구역 ${r.seat_no}번`;
+
     const payBadge = isPaid
       ? '<span class="badge badge-paid"><i class="fa-solid fa-circle-check"></i> 입금완료</span>'
       : (isConfirmed ? '<span class="badge badge-unpaid"><i class="fa-solid fa-clock"></i> 입금대기</span>' : '<span style="color:var(--gray);font-size:12px">-</span>');
 
     const payBtn = isConfirmed
       ? (isPaid
-          ? `<button class="btn btn-unpay btn-sm" title="입금취소" onclick="openPay(${r.id},'cancel','${r.name}','${r.section}','${r.seat_no}')"><i class="fa-solid fa-rotate-left"></i></button>`
-          : `<button class="btn btn-pay btn-sm" title="입금완료 등록" onclick="openPay(${r.id},'pay','${r.name}','${r.section}','${r.seat_no}')"><i class="fa-solid fa-won-sign"></i></button>`)
+          ? `<button class="btn btn-unpay btn-sm" title="입금취소" onclick="openPay(${r.id},'cancel','${r.name}','${seatLabel}')"><i class="fa-solid fa-rotate-left"></i></button>`
+          : `<button class="btn btn-pay btn-sm" title="입금완료 등록" onclick="openPay(${r.id},'pay','${r.name}','${seatLabel}')"><i class="fa-solid fa-won-sign"></i></button>`)
       : '';
 
     return `
     <tr class="${isPaid ? 'paid-row' : ''}">
+      <td class="chk-col">
+        <input type="checkbox" class="res-check" value="${r.id}"
+               data-paid="${isPaid}" data-confirmed="${isConfirmed}"
+               onchange="onCheckChange()">
+      </td>
       <td style="font-size:11.5px;color:var(--gray)">${r.res_code}</td>
       <td><strong>${r.name}</strong></td>
       <td style="color:var(--primary)">${r.username}</td>
       <td>${r.phone}</td>
       <td>${r.church}</td>
       <td>${r.position}</td>
-      <td>${r.floor}층</td>
-      <td>${r.section} 구역</td>
-      <td><strong>${r.seat_no}번</strong></td>
+      <td><strong>${seatLabel}</strong></td>
       <td style="font-size:12px;color:var(--gray)">${r.reserved_at ? r.reserved_at.substring(0,16) : '-'}</td>
       <td>${STATUS_MAP[r.status] || r.status}</td>
       <td>${payBadge}</td>
@@ -299,8 +347,7 @@ async function loadRes(page = 1) {
           <i class="fa-solid fa-pen"></i>
         </button>
         ${isPaid
-          ? `<button class="btn btn-sm btn-locked"
-                     title="입금완료 티켓은 삭제할 수 없습니다" disabled>
+          ? `<button class="btn btn-sm btn-locked" title="입금완료 티켓은 삭제할 수 없습니다" disabled>
                <i class="fa-solid fa-lock"></i>
              </button>`
           : `<button class="btn btn-danger btn-sm" title="삭제"
@@ -322,24 +369,82 @@ async function loadRes(page = 1) {
   document.getElementById('pagination').innerHTML = pHtml;
 }
 
-/* ── 입금 처리 ── */
-function openPay(id, action, name, section, seatNo) {
-  payTargetId     = id;
+/* ── 체크박스 / 일괄처리 ── */
+function toggleAll(checked) {
+  document.querySelectorAll('.res-check').forEach(cb => { cb.checked = checked; });
+  onCheckChange();
+}
+
+function onCheckChange() {
+  const checked = getChecked();
+  const total   = document.querySelectorAll('.res-check').length;
+  document.getElementById('checkAll').checked = checked.length > 0 && checked.length === total;
+  document.getElementById('checkAll').indeterminate = checked.length > 0 && checked.length < total;
+  document.getElementById('bulkCount').textContent = checked.length;
+  document.getElementById('bulkBar').classList.toggle('show', checked.length > 0);
+}
+
+function getChecked() {
+  return [...document.querySelectorAll('.res-check:checked')].map(cb => parseInt(cb.value));
+}
+
+function clearAllCheck() {
+  document.querySelectorAll('.res-check').forEach(cb => cb.checked = false);
+  const ca = document.getElementById('checkAll');
+  if (ca) { ca.checked = false; ca.indeterminate = false; }
+  document.getElementById('bulkBar').classList.remove('show');
+  document.getElementById('bulkCount').textContent = '0';
+}
+
+function openBulkPay(action) {
+  const ids = getChecked();
+  if (!ids.length) return;
+  payTargetBulk   = true;
   payTargetAction = action;
+  payTargetId     = null;
+
   const isPay = action === 'pay';
   const header = document.getElementById('payModalHeader');
-  const title  = document.getElementById('payModalTitle');
   const btn    = document.getElementById('payConfirmBtn');
 
   header.style.background = isPay
     ? 'linear-gradient(135deg,#10B981,#0e9e6e)'
     : 'linear-gradient(135deg,#F59E0B,#d97706)';
-  title.innerHTML  = isPay
+  document.getElementById('payModalTitle').innerHTML = isPay
+    ? '<i class="fa-solid fa-won-sign"></i> 일괄 입금완료 등록'
+    : '<i class="fa-solid fa-rotate-left"></i> 일괄 입금취소';
+  document.getElementById('payInfo').innerHTML =
+    `<i class="fa-solid fa-square-check" style="color:var(--primary);margin-right:6px"></i>
+     선택한 <strong>${ids.length}건</strong>을 일괄 처리합니다.`;
+  document.getElementById('payConfirmMsg').innerHTML = isPay
+    ? '<i class="fa-solid fa-circle-info"></i> 선택한 건을 모두 입금완료로 등록합니다.'
+    : '<i class="fa-solid fa-triangle-exclamation"></i> 선택한 건을 모두 입금대기 상태로 되돌립니다.';
+  document.getElementById('payConfirmMsg').className = isPay ? 'alert alert-info show' : 'alert alert-warning show';
+  btn.className = isPay ? 'btn btn-pay' : 'btn btn-unpay';
+  btn.innerHTML = isPay
+    ? '<i class="fa-solid fa-check"></i> 일괄 입금완료'
+    : '<i class="fa-solid fa-rotate-left"></i> 일괄 입금취소';
+  document.getElementById('payModal').classList.add('show');
+}
+
+/* ── 입금 처리 (단건) ── */
+function openPay(id, action, name, seatLabel) {
+  payTargetId     = id;
+  payTargetAction = action;
+  payTargetBulk   = false;
+  const isPay = action === 'pay';
+  const header = document.getElementById('payModalHeader');
+  const btn    = document.getElementById('payConfirmBtn');
+
+  header.style.background = isPay
+    ? 'linear-gradient(135deg,#10B981,#0e9e6e)'
+    : 'linear-gradient(135deg,#F59E0B,#d97706)';
+  document.getElementById('payModalTitle').innerHTML = isPay
     ? '<i class="fa-solid fa-won-sign"></i> 입금 완료 등록'
     : '<i class="fa-solid fa-rotate-left"></i> 입금 취소';
   document.getElementById('payInfo').innerHTML =
     `<i class="fa-solid fa-user" style="color:var(--primary);margin-right:6px"></i>
-     <strong>${name}</strong> 님의 <strong>${section} 구역 ${seatNo}번</strong> 좌석`;
+     <strong>${name}</strong> 님의 <strong>${seatLabel}</strong>`;
   document.getElementById('payConfirmMsg').innerHTML = isPay
     ? '<i class="fa-solid fa-circle-info"></i> 입금이 확인되었음을 등록합니다.'
     : '<i class="fa-solid fa-triangle-exclamation"></i> 입금 완료 상태를 취소(입금대기)로 되돌립니다.';
@@ -350,24 +455,36 @@ function openPay(id, action, name, section, seatNo) {
     : '<i class="fa-solid fa-rotate-left"></i> 입금취소';
   document.getElementById('payModal').classList.add('show');
 }
-function closePay() { document.getElementById('payModal').classList.remove('show'); payTargetId = null; }
+function closePay() { document.getElementById('payModal').classList.remove('show'); payTargetId = null; payTargetBulk = false; }
 
 async function confirmPay() {
-  if (!payTargetId) return;
   const btn = document.getElementById('payConfirmBtn');
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 처리 중...';
 
-  const res = await fetch(`/api/admin/reservations/${payTargetId}/payment`, {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ action: payTargetAction })
-  });
+  let ok = false;
+  if (payTargetBulk) {
+    const ids = getChecked();
+    const res = await fetch('/api/admin/reservations/bulk-payment', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ids, action: payTargetAction })
+    });
+    ok = res.ok;
+  } else {
+    const res = await fetch(`/api/admin/reservations/${payTargetId}/payment`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: payTargetAction })
+    });
+    ok = res.ok;
+  }
+
   btn.disabled = false; btn.innerHTML = orig;
   closePay();
 
-  if (res.ok) {
+  if (ok) {
     const msg = payTargetAction === 'pay' ? '입금완료로 등록했습니다.' : '입금 상태를 취소했습니다.';
     showAlert(msg, 'success');
     loadRes(currentPage);
