@@ -8,11 +8,29 @@ import threading, time, uuid
 from collections import OrderedDict
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sda-ticket-secret-key-2026-sjhc-CHANGE-IN-PROD')
+# ── 세션 쿠키 최적화 (300명 동시접속 보안·성능) ─────────────────
+app.config['SESSION_COOKIE_HTTPONLY']   = True     # XSS: JS에서 쿠키 접근 차단
+app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'   # CSRF 방어 + 일반 탐색 허용
+app.config['SESSION_COOKIE_NAME']       = 'ts'    # 짧은 쿠키명 → 헤더 크기 절감
+app.config['PERMANENT_SESSION_LIFETIME'] = 7200   # 세션 유효기간 2시간(초)
+app.config['JSON_AS_ASCII']             = False   # 한글 JSON 인코딩 최적화
+
+# ── Flask-Limiter: 로그인 무차별 대입 공격 방어 ─────────────────────
+# - 메모리 저장소 사용 (Redis 불필요, 서버 재시작 시 카운터 초기화)
+# - 기본 제한 없음 (로그인 라우트에만 @limiter.limit 으로 개별 적용)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,  # IP 기준 카운팅
+    default_limits=[],            # 전역 제한 없음 — 로그인에만 적용
+    storage_uri='memory://',
+)
 
 # ══════════════════════════════════════════════════════════════════
 # 대기열 시스템 (Queue System)
@@ -26,6 +44,9 @@ _ql      = threading.Lock()
 _active  = {}            # token → {uid, name, entered_at, heartbeat}
 _waiting = OrderedDict() # token → {uid, name, joined_at}
 
+# Perf-③: 동시 예매 확정 요청 제한 (SQLite BEGIN IMMEDIATE 충돌 최소화)
+_reservation_sem = threading.Semaphore(20)  # 동시 처리 최대 20개 (스레드 32 기준)
+
 def _queue_fill():
     """빈 슬롯에 대기자 입장 (lock 보유 상태에서 호출)"""
     while len(_active) < MAX_ACTIVE and _waiting:
@@ -33,17 +54,27 @@ def _queue_fill():
         del _waiting[tok]
         _active[tok] = {**info, 'entered_at': time.time(), 'heartbeat': time.time()}
 
-def _queue_kick(token):
-    """활성 세션 퇴장 + 좌석 lock 해제 + 빈 슬롯 보충 (lock 보유 상태에서 호출)"""
-    _active.pop(token, None)
+# Perf-②: _ql 보유 중 DB I/O 제거 → 잠금 점유 시간 최소화
+def _release_seat_lock_db(token):
+    """좌석 lock DB 해제 (_ql 외부에서 호출해야 함)"""
     try:
-        conn = sqlite3.connect(os.environ.get("TICKET_DB", os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "tickets.db")), timeout=10)
+        _db = os.environ.get("TICKET_DB", os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "tickets.db"))
+        conn = sqlite3.connect(_db, timeout=10)
         conn.execute('PRAGMA journal_mode = WAL')
-        conn.execute("UPDATE seats SET status='available', locked_by=NULL, locked_at=NULL "
-                     "WHERE locked_by=? AND status='locked'", (token,))
-        conn.commit(); conn.close()
-    except Exception: pass
+        conn.execute(
+            "UPDATE seats SET status='available', locked_by=NULL, locked_at=NULL "
+            "WHERE locked_by=? AND status='locked'", (token,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def _queue_kick(token):
+    """활성 세션 메모리 퇴장 + 슬롯 보충 (_ql 보유 상태에서 호출)
+    DB 좌석 해제는 _ql 해제 후 _release_seat_lock_db(token) 로 처리.
+    """
+    _active.pop(token, None)
     _queue_fill()
 
 def _queue_cleanup_loop():
@@ -51,17 +82,22 @@ def _queue_cleanup_loop():
     while True:
         time.sleep(5)
         now = time.time()
+        expired_tokens = []
         with _ql:
             # 하트비트 타임아웃
             expired = [t for t, v in list(_active.items())
                        if now - v['heartbeat'] > HEARTBEAT_LIMIT]
             for t in expired:
-                _queue_kick(t)
+                _queue_kick(t)          # 메모리만 (_ql 내부)
+                expired_tokens.append(t)
             # 30분 초과 대기자 제거
             old = [t for t, v in list(_waiting.items())
                    if now - v['joined_at'] > 1800]
             for t in old:
                 _waiting.pop(t, None)
+        # Perf-②: _ql 해제 후 DB 작업 (잠금 점유 최소화)
+        for t in expired_tokens:
+            _release_seat_lock_db(t)
         # DB 좌석 lock 만료 (5분 초과)
         try:
             db_path = os.environ.get("TICKET_DB", os.path.join(
@@ -186,25 +222,51 @@ SEAT_VERSION = '5.0'   # 버전 변경 시 seats/reservations 자동 초기화
 # DB 유틸리티
 # ──────────────────────────────────────────────
 def get_db():
-    # timeout=10: 다른 프로세스/스레드가 쓰기 중일 때 최대 10초 대기 후 에러
-    conn = sqlite3.connect(DATABASE, timeout=10)
+    # timeout=15: 동시 쓰기 경합 시 대기 시간 (300명 기준 상향)
+    conn = sqlite3.connect(DATABASE, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
-    # WAL 모드: 읽기와 쓰기가 서로 차단하지 않음 (200명 동시접속 필수)
+    # WAL 모드: 읽기와 쓰기가 서로 차단하지 않음 (300명 동시접속)
     conn.execute('PRAGMA journal_mode = WAL')
     # 동기화 수준 완화: 쓰기 성능 향상 (WAL 모드에서 안전)
     conn.execute('PRAGMA synchronous = NORMAL')
-    # WAL 체크포인트 자동 임계값 (페이지 수, 기본 1000)
-    conn.execute('PRAGMA wal_autocheckpoint = 1000')
+    # 페이지 캐시 32MB (기본 ~2MB) — 반복 읽기 DB I/O 대폭 감소
+    conn.execute('PRAGMA cache_size = -32000')
+    # 메모리맵 I/O 128MB — WAL 읽기 성능 향상
+    conn.execute('PRAGMA mmap_size = 134217728')
+    # WAL 체크포인트: 2000페이지마다 (기본 1000, 쓰기 빈도 분산)
+    conn.execute('PRAGMA wal_autocheckpoint = 2000')
     return conn
 
+# ── Perf-① config 인-메모리 캐시 (TTL 5초) ───────────────────
+_config_cache      = {}              # key → (value, timestamp)
+_config_cache_lock = threading.Lock()
+_CONFIG_TTL        = 5               # 초 단위
+
+def _invalidate_config_cache(key=None):
+    """관리자 설정 변경 시 캐시 즉시 무효화"""
+    with _config_cache_lock:
+        if key:
+            _config_cache.pop(key, None)
+        else:
+            _config_cache.clear()
+
 def get_config_value(key, default=None):
-    """config 테이블에서 설정값 조회"""
+    """config 테이블에서 설정값 조회 (TTL 캐시 적용)"""
+    now = time.time()
+    with _config_cache_lock:
+        if key in _config_cache:
+            val, ts = _config_cache[key]
+            if now - ts < _CONFIG_TTL:
+                return val if val is not None else default
     try:
         conn = get_db()
         row = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
         conn.close()
-        return row[0] if (row and row[0] is not None and row[0] != '') else default
+        val = row[0] if (row and row[0] is not None and row[0] != '') else None
+        with _config_cache_lock:
+            _config_cache[key] = (val, time.time())
+        return val if val is not None else default
     except Exception:
         return default
 
@@ -626,11 +688,16 @@ def queue_heartbeat():
 def queue_leave():
     """자발적 퇴장 (브라우저 종료, 뒤로가기 등)"""
     token = (request.json or {}).get('token', '')
+    kicked = False
     with _ql:
         if token in _active:
-            _queue_kick(token)
+            _queue_kick(token)   # 메모리만 (_ql 내부)
+            kicked = True
         elif token in _waiting:
             _waiting.pop(token, None)
+    # Perf-②: _ql 해제 후 DB 작업
+    if kicked:
+        _release_seat_lock_db(token)
     return jsonify({'ok': True})
 
 # ──────────────────────────────────────────────
@@ -756,6 +823,7 @@ def register():
         conn.close()
 
 @app.route('/api/login', methods=['POST'])
+@limiter.limit('10 per minute')   # 같은 IP에서 1분에 10회 초과 시 429
 def login():
     d = request.get_json()
     username = d.get('username','').strip()
@@ -783,6 +851,11 @@ def login():
     session['name']      = user['name']
     session['role']      = user['role']
     return jsonify({'ok': True, 'role': user['role'], 'name': user['name']})
+
+# ── 429 Rate-Limit 에러 → JSON 응답 (HTML 대신) ─────────────────────
+@app.errorhandler(429)
+def too_many_requests(e):
+    return jsonify({'error': '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.'}), 429
 
 @app.route('/api/logout', methods=['POST'])
 @csrf_protect
@@ -1009,6 +1082,10 @@ def create_reservation():
 
     user_id = session['user_id']
 
+    # Perf-③A: 세마포어로 동시 처리 수 제한 (5초 대기 후 포기 → 503)
+    if not _reservation_sem.acquire(blocking=True, timeout=5):
+        return jsonify({'error': '예매 요청이 많습니다. 잠시 후 다시 시도해주세요.'}), 503
+
     # isolation_level=None: 수동 트랜잭션 관리 (BEGIN IMMEDIATE 사용을 위해 필요)
     conn = sqlite3.connect(DATABASE, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -1022,10 +1099,22 @@ def create_reservation():
         except Exception:
             pass
         conn.close()
+        _reservation_sem.release()  # Perf-③: 세마포어 반드시 해제
 
     try:
-        # BEGIN IMMEDIATE: 이 시점부터 쓰기 잠금 확보 → 동시 예매 중복 원천 차단
-        conn.execute('BEGIN IMMEDIATE')
+        # Perf-③B: BEGIN IMMEDIATE 재시도 (최대 3회, 지수 백오프 50ms→100ms)
+        # 동시 예매 충돌 시 즉시 503 대신 짧게 대기 후 재시도
+        for _attempt in range(3):
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                break
+            except sqlite3.OperationalError as _e:
+                if 'locked' in str(_e).lower() and _attempt < 2:
+                    time.sleep(0.08 * (2 ** _attempt))  # 80ms, 160ms (스레드 32 기준)
+                    continue
+                conn.close()
+                _reservation_sem.release()
+                return jsonify({'error': '일시적으로 처리 중입니다. 잠시 후 다시 시도해주세요.'}), 503
 
         existing = conn.execute(
             'SELECT COUNT(*) FROM reservations WHERE user_id=? AND status="confirmed"',
@@ -1067,6 +1156,7 @@ def create_reservation():
 
         conn.execute('COMMIT')
         conn.close()
+        _reservation_sem.release()  # Perf-③: 정상 완료 후 세마포어 해제
         return jsonify({'ok': True, 'reservations': created,
                         'message': f'{len(created)}석 예매가 완료되었습니다.'})
     except sqlite3.OperationalError as e:
@@ -1111,6 +1201,11 @@ def cancel_reservation(res_id):
         return jsonify({'error': '이미 취소된 예매입니다.'}), 400
 
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # Bug-1 수정: 취소 시 해당 좌석을 available 로 복원 (reservations 변경과 같은 트랜잭션)
+    conn.execute(
+        "UPDATE seats SET status='available', locked_by=NULL, locked_at=NULL WHERE id=?",
+        (res['seat_id'],)
+    )
     conn.execute(
         'UPDATE reservations SET status="cancelled", cancelled_at=? WHERE id=?',
         (now, res_id)
@@ -1343,6 +1438,17 @@ def admin_update_member(uid):
 @admin_required
 def admin_delete_member(uid):
     conn = get_db()
+
+    # Bug-3 수정: reservations 취소 전에 seat_id 목록을 먼저 조회 → 좌석 복원
+    confirmed_seats = conn.execute(
+        'SELECT seat_id FROM reservations WHERE user_id=? AND status="confirmed"', (uid,)
+    ).fetchall()
+    for seat_row in confirmed_seats:
+        conn.execute(
+            "UPDATE seats SET status='available', locked_by=NULL, locked_at=NULL WHERE id=?",
+            (seat_row['seat_id'],)
+        )
+
     conn.execute('UPDATE reservations SET status="admin_cancelled" WHERE user_id=? AND status="confirmed"', (uid,))
     conn.execute('UPDATE users SET is_active=0 WHERE id=?', (uid,))
     conn.commit()
@@ -1404,6 +1510,18 @@ def admin_update_reservation(res_id):
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     new_status = d.get('status', 'confirmed')
     cancelled_at = now if new_status != 'confirmed' else None
+
+    # Bug-2 수정: 취소 계열 상태로 변경 시 해당 좌석을 available 로 복원
+    if new_status != 'confirmed':
+        res_row = conn.execute(
+            'SELECT seat_id FROM reservations WHERE id=? AND status="confirmed"', (res_id,)
+        ).fetchone()
+        if res_row:
+            conn.execute(
+                "UPDATE seats SET status='available', locked_by=NULL, locked_at=NULL WHERE id=?",
+                (res_row['seat_id'],)
+            )
+
     conn.execute('UPDATE reservations SET status=?, cancelled_at=?, memo=? WHERE id=?',
                  (new_status, cancelled_at, d.get('memo',''), res_id))
     conn.commit()
@@ -1687,6 +1805,7 @@ def admin_set_config():
                     pass
     conn.commit()
     conn.close()
+    _invalidate_config_cache()  # Perf-①: 설정 변경 시 캐시 즉시 무효화
     return jsonify({'ok': True})
 
 
@@ -1694,6 +1813,20 @@ def admin_set_config():
 # 앱 시작
 # ────────────────────────────────────────────────────────────
 init_db()
+
+# ── 앱 시작 시 SQLite 전역 최적화 (프로세스당 1회) ──────────────
+try:
+    _boot_conn = sqlite3.connect(DATABASE, timeout=10)
+    _boot_conn.execute('PRAGMA journal_mode = WAL')
+    _boot_conn.execute('PRAGMA synchronous = NORMAL')
+    _boot_conn.execute('PRAGMA cache_size = -32000')   # 32MB 캐시
+    _boot_conn.execute('PRAGMA mmap_size = 134217728') # 128MB mmap
+    _boot_conn.execute('PRAGMA wal_autocheckpoint = 2000')
+    _boot_conn.execute('PRAGMA optimize')              # 쿼리 플래너 통계 갱신
+    _boot_conn.commit()
+    _boot_conn.close()
+except Exception:
+    pass
 
 # DB config에서 설정값 로드
 try:

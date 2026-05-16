@@ -35,6 +35,16 @@ logs/
 Thumbs.db
 desktop.ini
 
+# FUSE 임시 파일 (Cowork/virtiofs 찌꺼기)
+.fuse_hidden*
+
+# 임시 Word 잠금 파일
+~$*
+
+# 작업 문서 (배포 불필요)
+*.docx
+nul
+
 # IDE
 .vscode/
 .idea/
