@@ -90,6 +90,11 @@
             style="cursor:pointer;border:none">
       <i class="fa-solid fa-ticket"></i> 지금 예매하기
     </button>
+    <p id="openTimeInfo" style="display:none;margin:6px 0 0;font-size:13px;
+       color:rgba(255,255,255,.75);letter-spacing:.3px">
+      <i class="fa-solid fa-clock" style="margin-right:5px;font-size:11px"></i>
+      <span id="openTimeText"></span>
+    </p>
     <a href="/register" class="btn btn-lg" id="heroRegBtn"
        style="background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.5);color:white">
       <i class="fa-solid fa-user-plus"></i> 회원가입
@@ -266,12 +271,32 @@ async function initBookingBtn() {
   } catch(e) {
     _bookingOpen = true;  // API 실패 시 활성화 (안전 처리)
   }
+  renderOpenTimeInfo();
   applyBookingBtnState();
 
   // 미오픈 상태면 1초마다 카운트다운 + 자동 활성화 체크
   if (!_bookingOpen && _openDt) {
     _openCheckTimer = setInterval(tickBookingCheck, 1000);
   }
+}
+
+/* 예매 오픈 시간 표시 */
+function renderOpenTimeInfo() {
+  const wrap = document.getElementById('openTimeInfo');
+  const text = document.getElementById('openTimeText');
+  if (!wrap || !text) return;
+  if (!_openDt) { wrap.style.display = 'none'; return; }
+
+  const d = _openDt;
+  const formatted =
+    d.getFullYear() + '년 ' +
+    String(d.getMonth() + 1).padStart(2, '0') + '월 ' +
+    String(d.getDate()).padStart(2, '0') + '일 ' +
+    String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0');
+
+  text.textContent = '예매시작: ' + formatted;
+  wrap.style.display = 'block';
 }
 
 function applyBookingBtnState() {
