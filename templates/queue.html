@@ -397,10 +397,11 @@ async function pollStatus() {
 
 async function startQueue() {
   showState('stateLoading');
+  await window.csrfReady;   // CSRF 토큰 준비 대기
   try {
     const r = await fetch('/api/queue/join', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: myToken })
     });
 
@@ -437,7 +438,7 @@ setInterval(async function() {
   try {
     await fetch('/api/queue/heartbeat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: myToken })
     });
   } catch(e) {}
@@ -450,7 +451,7 @@ window.addEventListener('pagehide', function() {
 });
 
 function doLogout() {
-  fetch('/api/logout', { method: 'POST', headers: { 'X-CSRFToken': getCSRFToken() } })
+  fetch('/api/logout', { method: 'POST' })
     .finally(function() { location.href = '/'; });
 }
 
