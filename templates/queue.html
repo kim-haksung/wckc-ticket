@@ -290,4 +290,173 @@ function checkNotifByPosition(position) {
   // 2번 이내 — 매우 임박 알림 (1회만, 고유 tag 사용)
   if (position <= 2 && !notifSentVeryClose) {
     notifSentVeryClose = true;
-    s
+    sendNotification(
+      '🚨 지금 바로 입장합니다!',
+      '대기번호 ' + position + '번 — 좌석 선택 화면을 준비하세요!',
+      'queue-very-close'
+    );
+  }
+}
+
+/* 입장 가능 알림 (1회만) */
+function notifyActive() {
+  if (notifSentActive) return;
+  notifSentActive = true;
+  sendNotification(
+    '✅ 입장 가능합니다!',
+    '지금 바로 좌석을 선택하세요!',
+    'queue-active'
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   대기열 상태 관리 / 폴링
+══════════════════════════════════════════════════════════════ */
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function showState(id) {
+  ['stateLoading','stateWaiting','stateActive','stateExpired','stateNotOpen','stateError']
+    .forEach(function(s) {
+      document.getElementById(s).style.display = (s === id) ? '' : 'none';
+    });
+}
+
+function goToBooking() {
+  localStorage.removeItem(TOKEN_KEY);
+  location.href = '/booking';
+}
+
+function showActive(remainingSecs) {
+  if (isActiveShowing) return;
+  isActiveShowing = true;
+  stopPolling();
+  notifyActive();
+  showState('stateActive');
+  let secs = Math.min(remainingSecs || 3, 3);
+  document.getElementById('countdownNum').textContent = secs;
+  countdownTimer = setInterval(function() {
+    secs--;
+    document.getElementById('countdownNum').textContent = Math.max(0, secs);
+    if (secs <= 0) {
+      clearInterval(countdownTimer);
+      setTimeout(goToBooking, 500);
+    }
+  }, 1000);
+}
+
+function showExpired() {
+  stopPolling();
+  // 알림 플래그 초기화 (재입장 시 재알림 가능하도록)
+  notifSentImminent = false; notifSentVeryClose = false; notifSentActive = false;
+  isActiveShowing = false;
+  showState('stateExpired');
+  localStorage.removeItem(TOKEN_KEY);
+  myToken = '';
+  setTimeout(startQueue, 3000);
+}
+
+function showWaiting(data) {
+  showState('stateWaiting');
+  document.getElementById('myPosition').textContent  = data.position || '-';
+  document.getElementById('activeCount').textContent = data.active_count || 0;
+  const eta = data.eta_min || 1;
+  if (eta < 1) {
+    document.getElementById('etaDisplay').textContent = Math.round(eta * 60);
+    document.getElementById('etaUnit').textContent    = '초';
+  } else {
+    document.getElementById('etaDisplay').textContent = eta;
+    document.getElementById('etaUnit').textContent    = '분';
+  }
+  const total = (data.active_count || 0) + (data.waiting_count || data.position || 1);
+  const pct   = total > 0 ? Math.round(((total - data.position) / total) * 100) : 0;
+  document.getElementById('queueProgressBar').style.width = pct + '%';
+  checkNotifByPosition(data.position);
+}
+
+async function pollStatus() {
+  if (!myToken) return;
+  try {
+    const r = await fetch('/api/queue/status?token=' + encodeURIComponent(myToken));
+    if (!r.ok) {
+      retryCount++;
+      if (retryCount >= MAX_RETRIES) showState('stateError');
+      return;
+    }
+    retryCount = 0;
+    const d = await r.json();
+    if      (d.status === 'active')  showActive(d.remaining);
+    else if (d.status === 'waiting') showWaiting(d);
+    else if (d.status === 'expired') showExpired();
+  } catch(e) {
+    retryCount++;
+    if (retryCount >= MAX_RETRIES) showState('stateError');
+  }
+}
+
+async function startQueue() {
+  showState('stateLoading');
+  try {
+    const r = await fetch('/api/queue/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      body: JSON.stringify({ token: myToken })
+    });
+
+    if (r.status === 403) {
+      const d = await r.json();
+      if (d.open_time) {
+        document.getElementById('notOpenMsg').textContent =
+          '예매 오픈: ' + (d.open_time_display || d.open_time);
+      }
+      showState('stateNotOpen');
+      return;
+    }
+    if (!r.ok) { showState('stateError'); return; }
+
+    const d = await r.json();
+    myToken = d.token;
+    localStorage.setItem(TOKEN_KEY, myToken);
+
+    if      (d.status === 'active')  showActive(d.remaining);
+    else if (d.status === 'waiting') {
+      showWaiting(d);
+      pollTimer = setInterval(pollStatus, 3000);
+    } else {
+      showState('stateError');
+    }
+  } catch(e) {
+    showState('stateError');
+  }
+}
+
+/* 하트비트 — 30초마다 활성 세션 유지 */
+setInterval(async function() {
+  if (!myToken) return;
+  try {
+    await fetch('/api/queue/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      body: JSON.stringify({ token: myToken })
+    });
+  } catch(e) {}
+}, 30000);
+
+/* 페이지 이탈 시 대기열 탈퇴 */
+window.addEventListener('pagehide', function() {
+  if (!myToken) return;
+  navigator.sendBeacon('/api/queue/leave', JSON.stringify({ token: myToken }));
+});
+
+function doLogout() {
+  fetch('/api/logout', { method: 'POST', headers: { 'X-CSRFToken': getCSRFToken() } })
+    .finally(function() { location.href = '/'; });
+}
+
+/* ── 초기화 ── */
+initNotification();
+startQueue();
+</script>
+</body>
+</html>
