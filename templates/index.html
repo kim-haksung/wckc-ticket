@@ -86,21 +86,25 @@
     </div>
   </div>
   <div class="actions">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-      <button id="bookingBtn" class="btn btn-secondary btn-lg" onclick="handleBookingClick()"
-              style="cursor:pointer;border:none">
-        <i class="fa-solid fa-ticket"></i> 지금 예매하기
-      </button>
-      <p id="openTimeInfo" style="display:none;margin:0;font-size:13px;
-         color:#fff;letter-spacing:.3px;text-align:center">
-        <i class="fa-solid fa-clock" style="margin-right:5px;font-size:11px"></i>
+    <div style="display:flex;flex-direction:column;align-items:stretch;gap:8px">
+      <!-- 버튼 행: 두 버튼 동일 높이 -->
+      <div style="display:flex;gap:14px;justify-content:center">
+        <button id="bookingBtn" class="btn btn-secondary btn-lg" onclick="handleBookingClick()"
+                style="cursor:pointer;border:none">
+          <i class="fa-solid fa-ticket"></i> 지금 예매하기
+        </button>
+        <a href="/register" class="btn btn-lg" id="heroRegBtn"
+           style="background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.5);color:white;align-self:stretch;display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-user-plus"></i> 회원가입
+        </a>
+      </div>
+      <!-- 예매시작 시간: 두 버튼 전체 너비에 걸쳐 표시 -->
+      <p id="openTimeInfo" style="display:none;margin:0;font-size:15px;
+         color:#fff;letter-spacing:.4px;text-align:center;width:100%">
+        <i class="fa-solid fa-clock" style="margin-right:6px;font-size:13px"></i>
         <span id="openTimeText"></span>
       </p>
     </div>
-    <a href="/register" class="btn btn-lg" id="heroRegBtn"
-       style="background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.5);color:white">
-      <i class="fa-solid fa-user-plus"></i> 회원가입
-    </a>
   </div>
 
 </section>
