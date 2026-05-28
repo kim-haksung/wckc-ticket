@@ -1007,7 +1007,8 @@ def get_seats(floor):
             'row':     row['row_num'],
             'col':     row['col_num'],
             'seat_no': row['seat_no'],
-            'status':  disp
+            'status':  disp,
+            'floor':   floor   # 층별 금액 계산에 필요
         }
 
     # 현재 로그인 사용자의 기존 확정 예매 수 (전체 층 기준)

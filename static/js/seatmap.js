@@ -779,16 +779,25 @@ const SeatMap = (() => {
       const url = `/api/seats/${floor}` + (queueToken ? `?token=${encodeURIComponent(queueToken)}` : '');
       const res  = await fetch(url);
       const data = await res.json();
-      seats         = data.seats;
+      // ── 층 전환 시 다른 층 선택 유지: replace 대신 merge ──
+      const thisFloorIds = new Set(Object.keys(data.seats));
+      // 이 층에 속하는 기존 selected 제거 후 새 데이터로 교체
+      selected = selected.filter(function(id) { return !thisFloorIds.has(String(id)); });
+      // 새로 로드된 층의 seats를 전체 seats에 병합
+      Object.assign(seats, data.seats);
+      // 서버의 my_lock 좌석을 selected에 복원 (새로고침 대응)
+      Object.keys(data.seats).forEach(function(id) {
+        if (data.seats[id].status === 'my_lock' && !selected.includes(id)) {
+          selected.push(id);
+        }
+      });
+
       sections      = data.sections;
       reservedCount = data.reserved_count || 0;
       const isAdmin = data.is_admin || false;
       effectiveMax  = isAdmin
         ? Infinity
         : Math.max(0, (data.max_seats || MAX_SEATS) - reservedCount);
-
-      // 서버에서 my_lock 상태인 좌석을 selected에 복원 (페이지 새로고침 대응)
-      selected = Object.keys(seats).filter(id => seats[id].status === 'my_lock');
 
       if (floor === 1) renderFloor1(svg);
       else             renderFloor2(svg);
