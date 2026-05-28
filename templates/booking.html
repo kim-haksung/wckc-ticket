@@ -475,7 +475,7 @@ function switchFloor(floor, btn) {
   document.querySelectorAll('.floor-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('stageLabel').style.display = floor === 1 ? 'block' : 'none';
-  SeatMap.clearSelected();
+  // clearSelected() 제거 — 층 전환 시 다른 층 선택 유지 (seatmap.js의 merge 로직 활용)
   SeatMap.load(floor, 'seatMapSvg');
 }
 
