@@ -153,6 +153,14 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--primary); width:15px
     </div>
   </div>
 
+  <!-- 검색 결과 금액 요약 바 -->
+  <div id="amountBar" style="display:none;align-items:center;gap:16px;padding:10px 16px;
+       background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:12px;
+       font-size:13.5px;color:#065f46;flex-wrap:wrap">
+    <i class="fa-solid fa-won-sign" style="font-size:15px"></i>
+    <span id="amountBarText"></span>
+  </div>
+
   <!-- 예매 목록 -->
   <div class="card">
     <div class="card-header">
@@ -176,12 +184,13 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--primary); width:15px
               <th>좌석번호</th>
               <th>예매일시</th><th>예매상태</th>
               <th>입금상태</th><th>입금일시</th>
+              <th>금액</th>
               <th>메모</th>
               <th>관리</th>
             </tr>
           </thead>
           <tbody id="resTable">
-            <tr><td colspan="14" class="loading">로딩 중...</td></tr>
+            <tr><td colspan="15" class="loading">로딩 중...</td></tr>
           </tbody>
         </table>
       </div>
@@ -265,6 +274,8 @@ let delTargetId = null;
 let payTargetId = null;
 let payTargetAction = null;
 let payTargetBulk = false;
+// 층별 티켓 금액 (관리자 설정에서 로드)
+let floorPrices = { 1: 10000, 2: 10000 };
 
 const STATUS_MAP = {
   confirmed:       '<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> 정상</span>',
@@ -276,6 +287,12 @@ const STATUS_MAP = {
   const me = await fetch('/api/me').then(r => r.json());
   if (!me.logged_in || me.role !== 'admin') { location.href = '/'; return; }
   document.getElementById('adminName').textContent = me.name + ' 관리자';
+  // 층별 티켓 금액 로드
+  try {
+    const cfg = await fetch('/api/admin/config').then(r => r.json());
+    if (cfg.ticket_price_floor1) floorPrices[1] = parseInt(cfg.ticket_price_floor1) || 10000;
+    if (cfg.ticket_price_floor2) floorPrices[2] = parseInt(cfg.ticket_price_floor2) || 10000;
+  } catch (e) { /* 기본값 유지 */ }
   loadRes(1);
 })();
 
@@ -300,9 +317,34 @@ async function loadRes(page = 1) {
   const tbody = document.getElementById('resTable');
 
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray);padding:48px">예매 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;color:var(--gray);padding:48px">예매 내역이 없습니다.</td></tr>';
     document.getElementById('pagination').innerHTML = '';
+    document.getElementById('amountBar').style.display = 'none';
     return;
+  }
+
+  // 검색 결과 금액 요약 계산
+  let totalAmount = 0;       // 전체 확정 금액
+  let unpaidAmount = 0;      // 입금 대기 금액
+  let paidAmount = 0;        // 입금 완료 금액
+  list.forEach(function(r) {
+    if (r.status === 'confirmed') {
+      const price = floorPrices[r.floor] || 10000;
+      totalAmount += price;
+      if (r.payment_status === 'paid') paidAmount += price;
+      else unpaidAmount += price;
+    }
+  });
+  const fmt = function(n) { return n.toLocaleString('ko-KR') + '원'; };
+  const amountBar = document.getElementById('amountBar');
+  const amountText = document.getElementById('amountBarText');
+  if (list.length > 0) {
+    amountText.innerHTML =
+      `검색 결과 <strong>${list.length}건</strong> &nbsp;|&nbsp; ` +
+      `총 확정 금액: <strong>${fmt(totalAmount)}</strong> &nbsp;|&nbsp; ` +
+      `<span style="color:#065f46">입금완료: <strong>${fmt(paidAmount)}</strong></span> &nbsp;|&nbsp; ` +
+      `<span style="color:#92400e">입금대기: <strong>${fmt(unpaidAmount)}</strong></span>`;
+    amountBar.style.display = 'flex';
   }
 
   tbody.innerHTML = list.map(r => {
@@ -340,6 +382,7 @@ async function loadRes(page = 1) {
       <td>${STATUS_MAP[r.status] || r.status}</td>
       <td>${payBadge}</td>
       <td style="font-size:11.5px;color:var(--gray)">${r.payment_at ? r.payment_at.substring(0,16) : '-'}</td>
+      <td style="font-weight:600;white-space:nowrap;color:var(--dark)">${isConfirmed ? (floorPrices[r.floor]||10000).toLocaleString('ko-KR')+'원' : '<span style="color:var(--gray);font-weight:400">-</span>'}</td>
       <td class="memo-cell">${r.memo ? `<span class="memo-text" title="${r.memo.replace(/"/g,'&quot;')}"><i class="fa-solid fa-note-sticky" style="color:#e8a820;margin-right:4px"></i>${r.memo}</span>` : '<span style="color:#d1d5db">-</span>'}</td>
       <td style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
         ${payBtn}
@@ -539,7 +582,7 @@ async function confirmDel() {
 
 /* ── 공통 ── */
 function resetFilter() {
-  ['searchInput','statusInput','paymentInput','floorInput','sectionInput'].forEach(id => {
+  ['searchInput','statusInput','paymentInput','floorInput','sectionInput'].forEach(function(id) {
     document.getElementById(id).value = '';
   });
   loadRes(1);
