@@ -35,10 +35,10 @@ limiter = Limiter(
 # ══════════════════════════════════════════════════════════════════
 # 대기열 시스템 (Queue System)
 # ══════════════════════════════════════════════════════════════════
-MAX_ACTIVE      = 20    # 동시 입장 최대 인원
-ACTIVE_TIMEOUT  = 180   # 입장 후 3분 타임아웃 (초)
+MAX_ACTIVE      = 20    # 동시 입장 최대 인원 (DB config: max_active)
+ACTIVE_TIMEOUT  = 180   # 입장 후 예매 제한시간 초 (DB config: booking_duration)
 HEARTBEAT_LIMIT = 90    # 90초 무응답 → 자동 퇴장
-SEAT_LOCK_SECS  = 180   # 좌석 선점 3분
+SEAT_LOCK_SECS  = 180   # 좌석 선점 시간 = booking_duration 과 동기화
 
 _ql      = threading.Lock()
 _active  = {}            # token → {uid, name, entered_at, heartbeat}
@@ -407,6 +407,9 @@ def _run_init_db():
     # 기본 설정값 초기화 (없을 때만)
     c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('max_active', '20')")
     c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('booking_open_time', '')")
+    c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('booking_duration', '180')")
+    c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('ticket_price_floor1', '10000')")
+    c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('ticket_price_floor2', '10000')")
     conn.commit()
 
     ver_row = c.execute("SELECT value FROM config WHERE key='seat_version'").fetchone()
@@ -1055,10 +1058,14 @@ def booking_status():
             is_open = now >= open_dt
         except ValueError:
             pass
+    price1 = int(get_config_value('ticket_price_floor1', '10000') or 10000)
+    price2 = int(get_config_value('ticket_price_floor2', '10000') or 10000)
     return jsonify({
-        'is_open': is_open,
-        'open_time': open_time_str,           # '' 이면 미설정
-        'server_time': now.strftime('%Y-%m-%d %H:%M:%S')
+        'is_open':    is_open,
+        'open_time':  open_time_str,          # '' 이면 미설정
+        'server_time': now.strftime('%Y-%m-%d %H:%M:%S'),
+        'ticket_price_floor1': price1,
+        'ticket_price_floor2': price2,
     })
 
 # ──────────────────────────────────────────────
@@ -1778,12 +1785,17 @@ def admin_get_config():
     """시스템 설정 조회"""
     conn = get_db()
     rows = conn.execute(
-        "SELECT key, value FROM config WHERE key IN ('max_active', 'booking_open_time')"
+        "SELECT key, value FROM config WHERE key IN "
+        "('max_active','booking_open_time','booking_duration',"
+        "'ticket_price_floor1','ticket_price_floor2')"
     ).fetchall()
     conn.close()
     cfg = {r['key']: (r['value'] or '') for r in rows}
-    cfg.setdefault('max_active',         '20')
-    cfg.setdefault('booking_open_time', '')
+    cfg.setdefault('max_active',           '20')
+    cfg.setdefault('booking_open_time',    '')
+    cfg.setdefault('booking_duration',     '180')
+    cfg.setdefault('ticket_price_floor1',  '10000')
+    cfg.setdefault('ticket_price_floor2',  '10000')
     return jsonify(cfg)
 
 @app.route('/api/admin/config', methods=['POST'])
@@ -1794,17 +1806,26 @@ def admin_set_config():
     """시스템 설정 저장"""
     data = request.get_json() or {}
     conn = get_db()
-    for key in ('max_active', 'booking_open_time'):
+    allowed = ('max_active', 'booking_open_time', 'booking_duration',
+               'ticket_price_floor1', 'ticket_price_floor2')
+    for key in allowed:
         if key in data:
-            conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, data[key]))
-            if key == 'max_active':
-                global MAX_ACTIVE
-                try:
-                    MAX_ACTIVE = int(data[key])
-                except Exception:
-                    pass
+            conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, str(data[key])))
     conn.commit()
     conn.close()
+
+    # 메모리 전역 변수 즉시 반영
+    global MAX_ACTIVE, ACTIVE_TIMEOUT, SEAT_LOCK_SECS
+    try:
+        if 'max_active' in data:
+            MAX_ACTIVE = int(data['max_active'])
+        if 'booking_duration' in data:
+            v = int(data['booking_duration'])
+            ACTIVE_TIMEOUT = v
+            SEAT_LOCK_SECS = v
+    except Exception:
+        pass
+
     _invalidate_config_cache()  # Perf-①: 설정 변경 시 캐시 즉시 무효화
     return jsonify({'ok': True})
 
@@ -1833,6 +1854,10 @@ try:
     _cfg_max = get_config_value('max_active')
     if _cfg_max:
         MAX_ACTIVE = int(_cfg_max)
+    _cfg_dur = get_config_value('booking_duration')
+    if _cfg_dur:
+        ACTIVE_TIMEOUT = int(_cfg_dur)
+        SEAT_LOCK_SECS = int(_cfg_dur)
 except Exception:
     pass
 

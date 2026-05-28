@@ -458,6 +458,15 @@ SeatMap.onLoad(({ reservedCount, effectiveMax, maxSeats }) => {
     SeatMap.setToken(queueToken);
   }
 
+  // ── 층별 티켓 금액 주입 ──
+  try {
+    const bs = await fetch('/api/booking-status').then(r => r.json());
+    SeatMap.setPrices({
+      floor1: bs.ticket_price_floor1 || 10000,
+      floor2: bs.ticket_price_floor2 || 10000
+    });
+  } catch(e) { /* 실패 시 기본값(10,000원) 유지 */ }
+
   SeatMap.load(1, 'seatMapSvg');
 })();
 

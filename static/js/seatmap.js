@@ -43,6 +43,9 @@ const SeatMap = (() => {
   let queueToken = '';
   let seatPollTimer = null;
 
+  // ── 층별 티켓 금액 (booking.html 에서 setPrices로 주입, 기본 10,000원) ──
+  let _floorPrices = { 1: 10000, 2: 10000 };
+
   // ── 관리자 모드 (admin/seats.html 에서 setAdminMode(true)로 활성화) ──
   let adminMode = false;
 
@@ -518,16 +521,34 @@ const SeatMap = (() => {
     if (countEl) countEl.textContent = selected.length;
     if (bookBtn) bookBtn.disabled = selected.length === 0;
 
-    // 총 결제 금액 표시 (1석 = 10,000원)
+    // 총 결제 금액 표시 (층별 금액 적용)
     const priceBar    = document.getElementById('totalPriceBar');
     const priceAmount = document.getElementById('totalPriceAmount');
     const priceDetail = document.getElementById('totalPriceDetail');
     if (priceBar) {
       if (selected.length > 0) {
-        const total = selected.length * 10000;
-        priceBar.style.display  = 'block';
+        // 선택된 좌석의 층별 합계 계산
+        let total = 0;
+        let cnt1 = 0, cnt2 = 0;
+        selected.forEach(function(id) {
+          const s = seats[id];
+          const fl = s ? s.floor : 1;
+          const p  = _floorPrices[fl] || 10000;
+          total += p;
+          if (fl === 1) cnt1++; else cnt2++;
+        });
+        priceBar.style.display = 'block';
         if (priceAmount) priceAmount.textContent = total.toLocaleString('ko-KR') + '원';
-        if (priceDetail) priceDetail.textContent  = `${selected.length}석 × 10,000원`;
+        // 상세 설명: 층이 섞인 경우 층별로 표시
+        let detail = '';
+        if (cnt1 > 0 && cnt2 > 0) {
+          detail = `1층 ${cnt1}석(${_floorPrices[1].toLocaleString('ko-KR')}원) + 2층 ${cnt2}석(${_floorPrices[2].toLocaleString('ko-KR')}원)`;
+        } else if (cnt1 > 0) {
+          detail = `${cnt1}석 × ${_floorPrices[1].toLocaleString('ko-KR')}원`;
+        } else {
+          detail = `${cnt2}석 × ${_floorPrices[2].toLocaleString('ko-KR')}원`;
+        }
+        if (priceDetail) priceDetail.textContent = detail;
       } else {
         priceBar.style.display = 'none';
       }
@@ -872,6 +893,12 @@ const SeatMap = (() => {
     queueToken = token || '';
   }
 
+  /** booking.html에서 층별 금액 주입 { floor1: number, floor2: number } */
+  function setPrices(prices) {
+    if (prices && prices.floor1) _floorPrices[1] = parseInt(prices.floor1) || 10000;
+    if (prices && prices.floor2) _floorPrices[2] = parseInt(prices.floor2) || 10000;
+  }
+
   /** admin/seats.html에서 관리자 모드 활성화 */
   function setAdminMode(flag) {
     adminMode = !!flag;
@@ -900,7 +927,7 @@ const SeatMap = (() => {
   }
 
   return {
-    load, setToken, setAdminMode, toggleSeat, removeSeat, getSelected, clearSelected,
+    load, setToken, setPrices, setAdminMode, toggleSeat, removeSeat, getSelected, clearSelected,
     onSelect, onLoad, getEffectiveMax, getReservedCount,
     stopSeatPoll, rerenderCurrent, getBlockedCount
   };

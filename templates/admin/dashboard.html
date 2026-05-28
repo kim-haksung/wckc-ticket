@@ -167,7 +167,7 @@
       <span><i class="fa-solid fa-gear"></i> 예매 시스템 설정</span>
       <span id="configSaveMsg" style="font-size:12px;font-weight:400;color:#10B981;opacity:0;transition:opacity .4s"></span>
     </div>
-    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:end">
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
 
       <!-- 예매 오픈 시간 -->
       <div>
@@ -218,6 +218,59 @@
           현재 대기중: <strong id="queueWaiting">-</strong>명 /
           예매중: <strong id="queueActive">-</strong>명
         </div>
+      </div>
+
+      <!-- 예매 제한 시간 -->
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px">
+          <i class="fa-solid fa-stopwatch" style="color:var(--accent);margin-right:6px"></i>
+          예매 제한 시간 <span style="font-weight:400;color:var(--gray)">(입장 후 좌석 선택 허용 시간)</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="inputDuration" min="60" max="1800" step="30" value="180"
+            style="width:100px;padding:9px 12px;border:1px solid var(--gray-mid);border-radius:8px;font-size:15px;font-weight:700;font-family:inherit;color:var(--dark);text-align:center"
+            oninput="updateDurationLabel(parseInt(this.value)||180);markDirty()">
+          <span style="font-size:13px;color:var(--gray)">초</span>
+          <div style="display:flex;gap:4px;margin-left:4px">
+            <button class="btn btn-sm" style="background:#f0f4f8;color:#374151;border:1px solid #d1d5db;padding:6px 10px"
+                    onclick="adjustDuration(-30)">−30</button>
+            <button class="btn btn-sm" style="background:#f0f4f8;color:#374151;border:1px solid #d1d5db;padding:6px 10px"
+                    onclick="adjustDuration(30)">+30</button>
+          </div>
+          <span id="durationMin" style="font-size:12px;color:var(--gray);margin-left:4px"></span>
+        </div>
+        <p style="font-size:11.5px;color:var(--gray);margin-top:5px">
+          <i class="fa-solid fa-circle-info" style="color:#3b82f6"></i>
+          입장 후 이 시간 내에 예매를 완료해야 합니다. (기본: 180초 = 3분, 권장: 120~600초)
+        </p>
+      </div>
+
+      <!-- 층별 티켓 금액 -->
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px">
+          <i class="fa-solid fa-won-sign" style="color:var(--accent);margin-right:6px"></i>
+          티켓 금액 설정 <span style="font-weight:400;color:var(--gray)">(층별 좌석 가격)</span>
+        </label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px;font-weight:600;color:var(--primary);width:40px">1층</span>
+            <input type="number" id="inputPriceFloor1" min="0" max="1000000" step="1000" value="10000"
+              style="width:110px;padding:8px 12px;border:1px solid var(--gray-mid);border-radius:8px;font-size:14px;font-weight:700;font-family:inherit;color:var(--dark);text-align:right"
+              oninput="markDirty()">
+            <span style="font-size:13px;color:var(--gray)">원</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px;font-weight:600;color:var(--primary);width:40px">2층</span>
+            <input type="number" id="inputPriceFloor2" min="0" max="1000000" step="1000" value="10000"
+              style="width:110px;padding:8px 12px;border:1px solid var(--gray-mid);border-radius:8px;font-size:14px;font-weight:700;font-family:inherit;color:var(--dark);text-align:right"
+              oninput="markDirty()">
+            <span style="font-size:13px;color:var(--gray)">원</span>
+          </div>
+        </div>
+        <p style="font-size:11.5px;color:var(--gray);margin-top:5px">
+          <i class="fa-solid fa-circle-info" style="color:#3b82f6"></i>
+          예매 화면에서 좌석 선택 시 해당 금액이 즉시 반영됩니다.
+        </p>
       </div>
     </div>
 
@@ -298,6 +351,16 @@ async function loadConfig() {
 
     // 동시 예매자수
     document.getElementById('inputMaxActive').value = cfg.max_active || 20;
+
+    // 예매 제한 시간
+    const dur = parseInt(cfg.booking_duration) || 180;
+    document.getElementById('inputDuration').value = dur;
+    updateDurationLabel(dur);
+
+    // 층별 티켓 금액
+    document.getElementById('inputPriceFloor1').value = cfg.ticket_price_floor1 || 10000;
+    document.getElementById('inputPriceFloor2').value = cfg.ticket_price_floor2 || 10000;
+
     configDirty = false;
   } catch (e) {
     console.error('config load error:', e);
@@ -354,6 +417,21 @@ function adjustMax(delta) {
   markDirty();
 }
 
+function adjustDuration(delta) {
+  const el  = document.getElementById('inputDuration');
+  const val = Math.min(1800, Math.max(60, (parseInt(el.value) || 180) + delta));
+  el.value  = val;
+  updateDurationLabel(val);
+  markDirty();
+}
+
+function updateDurationLabel(secs) {
+  const el = document.getElementById('durationMin');
+  if (!el) return;
+  const m = Math.floor(secs / 60), s = secs % 60;
+  el.textContent = s > 0 ? `(${m}분 ${s}초)` : `(${m}분)`;
+}
+
 function markDirty() { configDirty = true; }
 
 /* ── 설정 저장 ── */
@@ -362,6 +440,9 @@ async function saveConfig() {
   const msgEl      = document.getElementById('configSaveMsg');
   const rawTime    = document.getElementById('inputOpenTime').value.trim();
   const maxActive  = parseInt(document.getElementById('inputMaxActive').value) || 20;
+  const duration   = parseInt(document.getElementById('inputDuration').value) || 180;
+  const price1     = parseInt(document.getElementById('inputPriceFloor1').value) || 10000;
+  const price2     = parseInt(document.getElementById('inputPriceFloor2').value) || 10000;
 
   // datetime-local "2026-05-20T10:00" → "2026-05-20 10:00:00"
   let openTimeStr = '';
@@ -376,7 +457,13 @@ async function saveConfig() {
     const res  = await fetch('/api/admin/config', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ booking_open_time: openTimeStr, max_active: maxActive })
+      body:    JSON.stringify({
+        booking_open_time:   openTimeStr,
+        max_active:          maxActive,
+        booking_duration:    duration,
+        ticket_price_floor1: price1,
+        ticket_price_floor2: price2
+      })
     });
     const data = await res.json();
 
